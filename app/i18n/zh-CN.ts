@@ -39,9 +39,7 @@ const messages = {
   navigation: {
     chat: "聊天",
     collapseSidebar: "收起侧边栏",
-    database: "数据库",
     expandSidebar: "展开侧边栏",
-    extensions: "扩展",
     navigation: "导航",
     navigationDescription: "主导航",
     observability: "可观测性",
@@ -50,7 +48,6 @@ const messages = {
     team: "团队",
   },
   pages: {
-    databaseTitle: "数据库",
     observabilityPageTitle: "代理可观测性",
     teamTitle: "团队",
     teamCreateOrgDescription: "创建组织以邀请队友并共享此应用。",

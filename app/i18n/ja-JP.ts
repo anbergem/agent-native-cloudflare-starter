@@ -42,9 +42,7 @@ const messages = {
   navigation: {
     chat: "チャット",
     collapseSidebar: "サイドバーを折りたたむ",
-    database: "データベース",
     expandSidebar: "サイドバーを展開",
-    extensions: "拡張機能",
     navigation: "ナビゲーション",
     navigationDescription: "メインナビゲーション",
     observability: "可観測性",
@@ -53,7 +51,6 @@ const messages = {
     team: "チーム",
   },
   pages: {
-    databaseTitle: "データベース",
     observabilityPageTitle: "エージェント可観測性",
     teamTitle: "チーム",
     teamCreateOrgDescription:

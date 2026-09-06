@@ -41,9 +41,7 @@ const messages = {
   navigation: {
     chat: "चैट",
     collapseSidebar: "साइडबार संक्षिप्त करें",
-    database: "डेटाबेस",
     expandSidebar: "साइडबार विस्तृत करें",
-    extensions: "एक्सटेंशन",
     navigation: "नेविगेशन",
     navigationDescription: "मुख्य नेविगेशन",
     observability: "अवलोकनक्षमता",
@@ -52,7 +50,6 @@ const messages = {
     team: "टीम",
   },
   pages: {
-    databaseTitle: "डेटाबेस",
     observabilityPageTitle: "एजेंट ऑब्ज़र्वेबिलिटी",
     teamTitle: "टीम",
     teamCreateOrgDescription:

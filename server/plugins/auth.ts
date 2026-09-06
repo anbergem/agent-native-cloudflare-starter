@@ -1,22 +1,19 @@
 import { createAuthPlugin } from "@agent-native/core/server";
 
-const rawAppTitle = "Example Jobs";
-const appTitle = rawAppTitle === "{" + "{APP_TITLE}}" ? "Chat" : rawAppTitle;
-
+// No `workspaceAppPublicPaths`: every page requires sign-in, including `/`
+// (D11 — membership is invite-only and there is no marketing surface).
+//
+// `marketing.tagline` is required by `AuthOptions["marketing"]`, so it carries a
+// neutral one-liner rather than the template's product pitch. No screenshot, no
+// feature list and no "learn more" link: the sign-in page is internal.
+// `rootAuth` defaults to true whenever `marketing` is set, which serves the
+// sign-in document at `/` for everyone — signed in or not — and never reaches
+// the `_index` route. `/` is an ordinary authenticated page here (B17), so it
+// has to be off; the auth guard still sends anonymous visitors to sign in.
 export default createAuthPlugin({
-  workspaceAppPublicPaths: ["/"],
+  rootAuth: false,
   marketing: {
-    appName: appTitle,
-    screenshotPath: "/auth-marketing/chat.webp",
-    screenshotWidth: 914,
-    screenshotHeight: 818,
-    learnMoreUrl: "https://agent-native.com/apps/chat",
-    tagline:
-      "Start from a chat-first agent-native app and add actions, screens, and workflows as you grow.",
-    features: [
-      "Full-page chat with durable threads and tool call history",
-      "Add actions once and use them from chat, UI, HTTP, MCP, A2A, and CLI",
-      "Plug in your own agent runtime or build on the included app-agent loop",
-    ],
+    appName: "Example Jobs",
+    tagline: "Sign in to continue.",
   },
 });

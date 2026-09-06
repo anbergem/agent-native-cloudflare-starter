@@ -26,6 +26,8 @@ export default defineAction({
     threadId: z.string().optional().describe("Chat thread ID to open"),
   }),
   http: false,
+  // Drives this app's own UI, so it is not part of the MCP surface (D12).
+  mcpTool: false,
   run: async (args) => {
     if (!args.view && !args.path) {
       throw new Error("At least --view or --path is required.");

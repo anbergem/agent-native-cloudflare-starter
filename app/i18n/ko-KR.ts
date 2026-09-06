@@ -43,9 +43,7 @@ const messages = {
   navigation: {
     chat: "채팅",
     collapseSidebar: "사이드바 접기",
-    database: "데이터베이스",
     expandSidebar: "사이드바 펼치기",
-    extensions: "확장 프로그램",
     navigation: "탐색",
     navigationDescription: "기본 탐색",
     observability: "관찰성",
@@ -54,7 +52,6 @@ const messages = {
     team: "팀",
   },
   pages: {
-    databaseTitle: "데이터베이스",
     observabilityPageTitle: "에이전트 관찰성",
     teamTitle: "팀",
     teamCreateOrgDescription: "팀원을 초대하고 이 앱을 공유할 조직을 만드세요.",

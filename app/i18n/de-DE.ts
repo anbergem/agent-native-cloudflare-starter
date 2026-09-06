@@ -43,9 +43,7 @@ const messages = {
   navigation: {
     chat: "Chat",
     collapseSidebar: "Seitenleiste einklappen",
-    database: "Datenbank",
     expandSidebar: "Seitenleiste ausklappen",
-    extensions: "Erweiterungen",
     navigation: "Navigation",
     navigationDescription: "Hauptnavigation",
     observability: "Beobachtbarkeit",
@@ -54,7 +52,6 @@ const messages = {
     team: "Team",
   },
   pages: {
-    databaseTitle: "Datenbank",
     observabilityPageTitle: "Agent-Beobachtbarkeit",
     teamTitle: "Team",
     teamCreateOrgDescription:
