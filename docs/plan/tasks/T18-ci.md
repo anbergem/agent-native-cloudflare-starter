@@ -1,0 +1,29 @@
+# T18 — CI workflow
+
+Goal: `.github/workflows/ci.yml` per B20, green on GitHub Actions.
+
+Depends on: T13, T16, T17. Read: B20; D21.
+
+## Steps
+
+1. Write `ci.yml`: triggers `pull_request` and `push` to `main`; `concurrency` group
+   `ci-${{ github.ref }}` with cancel-in-progress; job `verify` (ubuntu-latest, 20 min):
+   `actions/checkout@v4`, `pnpm/action-setup@v4` (version from `packageManager`),
+   `actions/setup-node@v4` with `node-version-file: .nvmrc` and `cache: pnpm`,
+   `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm test:integration`; job `worker`
+   (needs verify, 30 min): install as above, `pnpm build:worker`,
+   `actions/upload-artifact@v4` name `worker-bundle` path `dist/` retention 7 days,
+   write `.dev.vars` with `BETTER_AUTH_SECRET=$(openssl rand -hex 32)` and
+   `SEED_PASSWORD=Example-Seed-Password-2026`, `pnpm exec playwright install --with-deps chromium`,
+   `pnpm test:e2e`, upload `playwright-report/` on failure.
+2. No secrets are required by this workflow. Pin action versions to major tags as written.
+3. Push the branch, open the PR, and iterate until both jobs are green. Paste the run URL in
+   the PR body.
+
+## Deliverables
+
+`.github/workflows/ci.yml`.
+
+## Acceptance
+
+A green run of `ci.yml` on the PR (link in the PR body).
