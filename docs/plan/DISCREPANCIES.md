@@ -73,3 +73,70 @@ table, standardises on an unambiguous script name for the framework doctor and t
 files and CI use `pnpm run doctor`.
 
 Resolution: 2026-09-06 — the plan now uses the script name `agent-native:doctor` everywhere (B15, T01, all acceptance blocks); no script named `doctor` will exist.
+
+## 2026-09-06 T01 — `git check-ignore -q` rejects more than one pathname
+
+Expected (plan reference): `docs/plan/tasks/T01-toolchain.md` step 5 specifies the check
+"`.env` or `.dev.vars` is not ignored (`git check-ignore -q .env .dev.vars`)".
+
+Observed: with git 2.39.5, `git check-ignore -q .env .dev.vars` prints
+`fatal: --quiet is only valid with a single pathname` and exits 128, so the check reported a
+false finding (".gitignore: .env and .dev.vars must both be git-ignored") on a repository where
+both files are correctly ignored. `git check-ignore -q .env` and `git check-ignore -q .dev.vars`
+each exit 0.
+
+Impact: T01 step 5 only; the check itself is unchanged in meaning.
+
+Proposed handling: `scripts/check-config-hygiene.mjs` runs `git check-ignore -q <file>` once per
+file and reports the offending file by name. No plan change needed beyond the command spelling.
+
+Resolution:
+
+## 2026-09-06 T01 — `oxfmt` reformats the plan's Markdown, so `docs/` and `.agents/` are ignored
+
+Expected (plan reference): `docs/plan/tasks/T01-toolchain.md` step 3 ("`.oxfmtrc.json`: … add an
+`ignore` list with the same directories") and step 9 ("fix scaffold formatting only by running
+`oxfmt --write .` once"), i.e. the formatter was expected to touch scaffold source only.
+
+Observed: oxfmt 0.66.0 formats Markdown and YAML as well as TS/JS/JSON. `oxfmt --list-different .`
+reported 36 files, of which 31 are documents, not scaffold source: `docs/plan/*.md` (the
+implementation plan itself, including `03-blueprint.md`), `docs/plan/tasks/T*.md`, and the three
+framework-provided `.agents/skills/*/SKILL.md`. On `docs/plan/03-blueprint.md` alone
+`oxfmt --write` produced a 941-line diff: it pads every Markdown table and re-wraps the
+normative TypeScript inside the fenced code blocks. The config key is also spelled
+`ignorePatterns` (per `node_modules/oxfmt/configuration_schema.json`); there is no `ignore` key.
+
+Impact: T01 step 9. Running `oxfmt --write .` literally would rewrite the specification that
+every remaining task reads, in a toolchain pull request.
+
+Proposed handling: `.oxfmtrc.json` `ignorePatterns` lists `docs` and `.agents` in addition to the
+eight build directories from step 3, so `oxfmt` owns source and root Markdown (`AGENTS.md`,
+and later `README.md`/`ARCHITECTURE.md` from T23) but never the plan or the framework skills.
+`oxfmt --write .` was then run once over the remainder as step 9 requires.
+
+Resolution:
+
+## 2026-09-06 T01 — `noUncheckedIndexedAccess` breaks two scaffold files
+
+Expected (plan reference): `docs/plan/tasks/T01-toolchain.md` step 8 ("`tsconfig.json`: … `strict:
+true`; `noUncheckedIndexedAccess: true`") with `pnpm check` (which runs `agent-native typecheck`)
+passing under "Acceptance".
+
+Observed: after enabling the flag, `pnpm typecheck` failed with two pre-existing scaffold errors:
+
+```
+app/components/layout/Sidebar.tsx(113,38): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+app/hooks/use-navigation-state.ts(33,38): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+```
+
+Both are the same line, `const value = decodeURIComponent(match[1]).trim();`, inside a
+`threadIdFromPath` helper that has already returned when `match` is null.
+
+Impact: T01 step 8 and the acceptance command `pnpm check`.
+
+Proposed handling: changed both to `decodeURIComponent(match[1] ?? "")`. The regex
+`/^\/chat\/([^/]+)/` always fills group 1 when it matches, so runtime behaviour is unchanged;
+this is the smallest edit that keeps the flag the plan requires. No other scaffold file needed a
+change.
+
+Resolution:

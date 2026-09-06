@@ -12,6 +12,7 @@ export default defineConfig({
     },
   },
   test: {
+    include: ["tests/unit/**/*.test.ts", "src/**/*.test.ts"],
     exclude: [
       "**/node_modules/**",
       "**/.git/**",

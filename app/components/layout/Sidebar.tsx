@@ -110,7 +110,7 @@ function threadIdFromPath(pathname: string) {
   const match = pathname.match(/^\/chat\/([^/]+)/);
   if (!match) return null;
   try {
-    const value = decodeURIComponent(match[1]).trim();
+    const value = decodeURIComponent(match[1] ?? "").trim();
     return value || null;
   } catch {
     return null;

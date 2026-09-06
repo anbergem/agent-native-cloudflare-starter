@@ -6,18 +6,18 @@
   "description": "Workspace app for Example Jobs.",
   "license": "MIT",
   "type": "module",
-  "packageManager": "pnpm@11.23.0",
   "scripts": {
-    "migrate:production": "tsx scripts/migrate-production.ts",
-    "dev": "agent-native dev --open",
+    "dev": "agent-native dev",
     "build": "agent-native build",
     "start": "agent-native start",
+    "lint": "oxlint . && oxfmt --check .",
     "typecheck": "agent-native typecheck",
-    "action": "agent-native action",
-    "script": "agent-native script",
-    "test": "vitest --run --passWithNoTests",
     "agent-native:doctor": "agent-native doctor",
-    "doctor": "agent-native doctor"
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "check:config": "node scripts/check-config-hygiene.mjs",
+    "test:unit": "vitest --run --passWithNoTests",
+    "check": "pnpm lint && pnpm typecheck && pnpm agent-native:doctor && pnpm check:boundaries && pnpm check:config && pnpm test:unit",
+    "action": "agent-native action"
   },
   "dependencies": {
     "@agent-native/core": "0.176.5",
@@ -31,18 +31,18 @@
     "@fontsource-variable/inter": "^5.2.8",
     "@libsql/client": "^0.15.8",
     "@openrouter/ai-sdk-provider": "^2.9.1",
+    "@react-router/dev": "8.1.0",
+    "@react-router/fs-routes": "8.1.0",
     "@tabler/icons-react": "^3.41.1",
     "ai": "6.0.258",
     "ai-sdk-ollama": "^3.8.8",
     "h3": "^2.0.1-rc.20",
     "isbot": "^5",
     "node-pty": "^1.1.0",
-    "zod": "^4.4.3",
     "postgres": "^3.4.9",
-    "@react-router/dev": "8.1.0",
-    "@react-router/fs-routes": "8.1.0",
     "react-router": "8.1.0",
-    "vite": "8.1.0"
+    "vite": "8.1.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
@@ -88,7 +88,8 @@
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "next-themes": "^0.4.6",
-    "oxfmt": "0.56.0",
+    "oxfmt": "0.66.0",
+    "oxlint": "1.81.0",
     "react": "^19.2.7",
     "react-day-picker": "^9.14.0",
     "react-dom": "^19.2.7",
@@ -107,6 +108,7 @@
   "engines": {
     "node": ">=22.22.0"
   },
+  "packageManager": "pnpm@11.23.0",
   "agent-native": {
     "scaffold": {
       "template": "chat",
