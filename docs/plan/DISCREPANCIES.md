@@ -810,7 +810,7 @@ cover `organizations` as well. The second is the smaller change and keeps the su
 at the cost of a copy of two framework tables in one test file, which T07 has already accepted
 for one of them.
 
-Resolution: <pending>
+Resolution: 2026-09-06 — F8, B18, T12, T13 and T16 updated: seed only after the app has touched the database, or create the two org tables with the F6 DDL in hermetic tests.
 
 ## 2026-09-06 T11 — reading `SEED_PASSWORD` from `process.env` fails the framework's `no-env-credentials` guard
 
@@ -847,4 +847,4 @@ The password is never printed: `scripts/seed.mjs` logs step lines and HTTP statu
 request body. Any later task that reads `SEED_PASSWORD` (T12's smoke, T16's Playwright
 fixtures, T19/T20's workflows) needs the same marker.
 
-Resolution: <pending>
+Resolution: 2026-09-06 — Accepted; the guard opt-out marker is the documented mechanism for scripts outside a request.
