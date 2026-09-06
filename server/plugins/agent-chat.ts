@@ -6,16 +6,38 @@ import {
 
 import actionsRegistry from "../../.generated/actions-registry.js";
 
-const INITIAL_TOOL_NAMES = ["view-screen", "navigate", "hello"];
+// The agent's whole tool surface, in the order a turn normally needs it:
+// queries, then commands, then the irreversible integration, then undo/redo.
+// Names that do not exist yet are added by T09/T10; `resolveInitialToolNames`
+// keeps the configured list and `filterInitialEngineTools` drops any name with
+// no matching schema, so an early entry is inert rather than an error.
+const INITIAL_TOOL_NAMES = [
+  "view-screen",
+  "navigate",
+  "list-jobs",
+  "get-job",
+  "list-customers",
+  "get-customer",
+  "list-recent-activity",
+  "create-customer",
+  "create-job",
+  "reschedule-job",
+  "start-job",
+  "complete-job",
+  "archive-job",
+  "archive-customer",
+  "send-job-to-accounting",
+  "undo-operation",
+  "redo-operation",
+];
 
 export default createAgentChatPlugin({
   appId: "example-jobs",
   actions: loadActionsFromStaticRegistry(actionsRegistry),
+  // D12: the app's own semantic actions plus the audit reader, and no raw
+  // database access on any agent surface.
+  frameworkTools: { preset: "minimal", database: "off", audit: true },
   initialToolNames: INITIAL_TOOL_NAMES,
   resolveOrgId: async (event) => (await getOrgContext(event)).orgId,
-  systemPrompt: `You are the Chat app agent.
-
-This is a minimal chat-first Agent-Native app. The chat is the product surface, and actions are the contract shared by chat, UI, HTTP, MCP, A2A, and CLI.
-
-Use actions as the source of truth. Start by inspecting the current screen when context matters. When the user asks to extend this app, keep the change small and agent-native: add or update actions, expose useful UI, and keep application state/navigation visible to the agent.`,
+  systemPrompt: `You operate the Example Jobs application on behalf of the signed-in user, and you do it only through this app's actions: every customer, job and history question is answered by calling an action, never from memory or guesswork, and you never fabricate an identifier, a status, a date or a result. After any write, re-read the affected record with the matching query action before you report what happened, and report exactly what that read returned — if an action fails, say so plainly and say what you would need to retry. Ask before anything destructive or irreversible, prefer narrow queries over fetching everything, and always answer in the language the user's interface is set to.`,
 });

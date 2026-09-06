@@ -41,9 +41,7 @@ const messages = {
   navigation: {
     chat: "المحادثة",
     collapseSidebar: "طي الشريط الجانبي",
-    database: "قاعدة البيانات",
     expandSidebar: "توسيع الشريط الجانبي",
-    extensions: "الإضافات",
     navigation: "التنقل",
     navigationDescription: "التنقل الرئيسي",
     observability: "قابلية المراقبة",
@@ -52,7 +50,6 @@ const messages = {
     team: "الفريق",
   },
   pages: {
-    databaseTitle: "قاعدة البيانات",
     observabilityPageTitle: "قابلية ملاحظة الوكيل",
     teamTitle: "الفريق",
     teamCreateOrgDescription: "أنشئ مؤسسة لدعوة الزملاء ومشاركة هذا التطبيق.",

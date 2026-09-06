@@ -43,9 +43,7 @@ const messages = {
   navigation: {
     chat: "Chat",
     collapseSidebar: "Recolher barra lateral",
-    database: "Banco de dados",
     expandSidebar: "Expandir barra lateral",
-    extensions: "Extensões",
     navigation: "Navegação",
     navigationDescription: "Navegação principal",
     observability: "Observabilidade",
@@ -54,7 +52,6 @@ const messages = {
     team: "Equipe",
   },
   pages: {
-    databaseTitle: "Banco de dados",
     observabilityPageTitle: "Observabilidade do agente",
     teamTitle: "Equipe",
     teamCreateOrgDescription:

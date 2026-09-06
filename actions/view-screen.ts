@@ -17,6 +17,8 @@ export default defineAction({
   schema: z.object({}),
   http: false,
   readOnly: true,
+  // In-app UI state, meaningless to an external MCP client (D12).
+  mcpTool: false,
   run: async () => {
     const navigation = await readAppState("navigation");
 
