@@ -248,6 +248,15 @@ wrangler r2 bucket create <name> --jurisdiction eu
 ```
 
 Local D1 state lives under `.wrangler/state/v3/d1/`. Deleting `.wrangler/state` resets it.
+
+Process management (verified T02): `wrangler dev` runs as `node .../wrangler.js dev ...` plus a
+`workerd` child; `pkill -f "wrangler dev"` does not match. Stop it with
+`pkill -f "wrangler.js dev"` (kill the wrangler process, not only workerd, or it respawns).
+First boot after `rm -rf .wrangler/state` answers `ping` within seconds; the framework's own
+table creation runs during the first request that touches the database. `.dev.vars` is created
+locally with `sed -e "s|^BETTER_AUTH_SECRET=$|BETTER_AUTH_SECRET=$(openssl rand -hex 32)|" .dev.vars.example > .dev.vars`.
+Under `wrangler dev` the health endpoint reports `auth.hostMismatch: true` (`localhost` vs
+`127.0.0.1`); harmless locally.
 Local D1 `database_id` can be any placeholder; `wrangler d1 migrations apply <name> --local`
 keys the local database by `database_name`.
 
