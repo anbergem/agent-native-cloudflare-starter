@@ -328,3 +328,31 @@ anyway, the smallest change is to add `NODE_ENV` to the plugin's read list and t
 "`APP_ENV` unset and `NODE_ENV=production`" as a violation.
 
 Resolution:
+
+## 2026-09-06 T05 — B7's `ports.ts` step and B22's own file path for `ExternalAccountingSystem` disagree
+
+Expected (plan reference): `docs/plan/tasks/T05-application-core.md` step 4 ("`src/application/ports.ts` per B7 (all interfaces, `Dependencies`)") and the Deliverables list, which names only
+`src/application/ports.ts` (no subdirectory). `docs/plan/03-blueprint.md` B7's own code block,
+however, annotates the `ExternalAccountingSystem` interface with a trailing comment
+`// src/application/ports/external-accounting.ts`, and B22 repeats this explicitly: "Files:
+`src/application/ports/external-accounting.ts` (port + `ExternalSystemError`)".
+
+Observed: step 4's instruction ("all interfaces … in ports.ts") and B7/B22's own file
+annotation for one of those interfaces name two different locations for the same type.
+
+Impact: T05 step 4 only, and the "git diff --stat shows only listed deliverables" acceptance
+rule in `docs/plan/tasks/README.md` — one extra file, `src/application/ports/external-
+accounting.ts`, is not on the Deliverables list.
+
+Proposed handling: followed B22's explicit file path, since T27 (which the same task file
+told this task to read B22 for) will need `ExternalSystemError` and depends on this exact
+location. `src/application/ports/external-accounting.ts` exports `ExternalAccountingSystem`
+and `ExternalSystemError`; `src/application/ports.ts` re-exports both with `export * from
+"./ports/external-accounting"` and imports the interface type for use in `Dependencies`, so
+every other file can still do `import { ExternalAccountingSystem, Dependencies, ... } from
+"../application/ports"` as step 4 implies. `tests/fixtures/in-memory.ts` implements a trivial
+in-memory `ExternalAccountingSystem` (deterministic `ACC-<jobId>` reference, an `alreadyExisted`
+flag keyed by idempotency key, no `failNextCall`) so `Dependencies` is complete for every
+use-case test before T27 adds the real, independently tested mock adapter.
+
+Resolution:
