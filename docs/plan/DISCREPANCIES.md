@@ -674,3 +674,36 @@ so a later task does not go looking for a file that is never written.
 Proposed handling: none; F12's file name should read `.ts`.
 
 Resolution:
+
+## 2026-09-06 T09 — an idempotent create's replay can only find its own operation row through a bounded query
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B8's last paragraph — "before building
+the resource, `deps.idempotency.find(orgId, action, key)`; when it returns an id, load and
+return that resource with `operationId` of its creating operation (query `listForResource` and
+take the `forward` create op)".
+
+Observed: `listForResource` cannot be asked for the create op. `OperationRepository`
+(`docs/plan/03-blueprint.md` B7) is
+`listForResource(orgId, type, id, limit): Promise<Operation[]>` — `limit` is required, there is
+no filter by `action` or `kind`, and both implementations return the *newest* rows first
+(`SELECT_OPERATIONS_FOR_RESOURCE` in `src/infrastructure/d1/sql.ts` is
+`ORDER BY performed_at DESC, id DESC LIMIT ?`; `tests/fixtures/in-memory.ts` sorts the same
+way). The creating operation is the oldest row for its resource, so a replay finds it only
+while the resource has fewer than `limit` operations. No other route exists: `idempotency_keys`
+stores `resource_id` and not the operation id (B10), and `CommandResult` requires one
+(B8).
+
+Impact: T09 step 1, the idempotent creates only. Nothing else reads a create's operation id.
+
+Proposed handling: `CREATE_OPERATION_LOOKUP_LIMIT = 100` in
+`src/application/use-cases/command.ts`, with the reasoning next to it. A replay is a retry of a
+call that just happened, so in practice the create is the only operation on the resource; the
+verification transcript shows a replayed `create-customer` returning the first call's
+`operationId` with no second row written. A key whose resource has since accumulated more than
+100 operations is reported as `AppError("INTERNAL", "Unexpected error")` — the create is not
+repeated and no wrong operation id is returned. Making it exact needs a new port method
+(`findCreateOperation(orgId, type, id, action)`, one statement:
+`... AND kind = 'forward' AND action = ? ORDER BY performed_at ASC LIMIT 1`), which is a B7
+decision rather than this task's.
+
+Resolution:
