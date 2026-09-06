@@ -166,14 +166,18 @@ function createJobRepository(state: InMemoryState): JobRepository {
       return found && found.orgId === orgId ? found : null;
     },
     list: async (orgId, filter) => {
-      return Array.from(state.jobs.values())
-        .filter((j) => j.orgId === orgId)
-        .filter((j) => (filter.status ? j.status === filter.status : true))
-        .filter((j) =>
-          filter.customerId ? j.customerId === filter.customerId : true,
-        )
-        .filter((j) => (filter.from ? j.scheduledAt >= filter.from : true))
-        .filter((j) => (filter.to ? j.scheduledAt <= filter.to : true));
+      return (
+        Array.from(state.jobs.values())
+          .filter((j) => j.orgId === orgId)
+          .filter((j) => (filter.status ? j.status === filter.status : true))
+          .filter((j) =>
+            filter.customerId ? j.customerId === filter.customerId : true,
+          )
+          // Half-open window, the same as `SELECT_JOBS_PARTS` in
+          // `src/infrastructure/d1/sql.ts`: `from` inclusive, `to` exclusive.
+          .filter((j) => (filter.from ? j.scheduledAt >= filter.from : true))
+          .filter((j) => (filter.to ? j.scheduledAt < filter.to : true))
+      );
     },
     create: async ({ job, operation, idempotency }) => {
       const customer = state.customers.get(job.customerId);

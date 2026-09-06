@@ -515,7 +515,9 @@ deliverable and this task's scope rule forbids editing it. T08 should either cha
 character in the fixture (making both half-open, which is what a day or week filter wants) or
 record the inclusive form in B7; the two implementations of one port must not stay divergent.
 
-Resolution:
+Resolution: 2026-09-06 — T08 step 4 changed `tests/fixtures/in-memory.ts` to
+`j.scheduledAt < filter.to`. Both implementations are now half-open, and
+`ListJobsInput` in `src/application/use-cases/list-jobs.ts` documents it.
 
 ## 2026-09-06 T07 — the container has to fill `Dependencies.accounting`, which no task before T27 provides
 
@@ -535,5 +537,140 @@ Proposed handling: `container.ts` fills the field with a four-line adapter that 
 adds `send-job-to-accounting`, and refusing loudly in the port's own error type is safer than a
 stub that returns a plausible invoice reference. T27 replaces the constant with the real mock
 adapter.
+
+Resolution:
+
+## 2026-09-06 T08 — `actions/run.ts` is the CLI dispatcher, and deleting it broke `pnpm action`
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B16 ("`hello.ts` and `run.ts` are
+deleted") and `docs/plan/tasks/T03-framework-config.md` step 6, whose acceptance asserts
+`test ! -e actions/run.ts`. `docs/plan/02-framework-facts.md` F13 at the same time promises
+`pnpm action <name> '{"arg":"value"}'` as a working surface, and T08's acceptance runs
+`pnpm action list-jobs --help`.
+
+Observed: with `actions/run.ts` absent,
+
+```
+$ pnpm action list-jobs --help
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module
+'/Users/.../agent-native-cloudflare-starter/scripts/run.ts' imported from ...
+```
+
+`node_modules/@agent-native/core/dist/cli/index.js` (case `"action"`, lines 697-710) resolves
+`actions/run.ts`, falls back to `scripts/run.ts`, and executes whichever exists. The scaffolded
+file is two lines — `import { runScript } from "@agent-native/core/scripts"; void runScript();`
+— i.e. the CLI's dispatcher entry point, not a demo action. F5 already records that a file named
+`run` is skipped by action discovery, so it never was an action.
+
+Impact: T08's second acceptance command, and every later task or document that uses
+`pnpm action <name>` (F13, B15).
+
+Proposed handling: restored `actions/run.ts` byte-for-byte from the scaffold commit
+(`git show e9e68a4:actions/run.ts`). Verified that it does not become an action: after deleting
+`.generated/` and re-running `pnpm dev`, `actions-registry.ts` still lists exactly the seven app
+actions and no `run`. T03's `test ! -e actions/run.ts` assertion is now false; B16's sentence
+should be narrowed to `hello.ts`, and T03's acceptance line dropped.
+
+Resolution:
+
+## 2026-09-06 T08 — `pnpm action <name> --help` runs the action instead of printing its parameters
+
+Expected (plan reference): `docs/plan/tasks/T08-queries.md` acceptance,
+`pnpm action list-jobs --help  # prints the action's parameters`.
+
+Observed: with `actions/run.ts` restored (entry above), `--help` after an action name is parsed
+as an ordinary argument. `dist/scripts/parse-args.js` turns `--help` into `{ help: "true" }`,
+`dist/scripts/runner.js` handles `--help` only when it appears *instead of* an action name
+(`if (!actionName || actionName === "--help")`), and `dispatchAction` then calls the action's
+wrapped `run`. So the command runs the query:
+
+```
+$ pnpm action list-jobs --help
+{"level":"error","event":"action","action":"list-jobs","outcome":"error","errorCode":"AUTHENTICATION","caller":"cli","orgId":null,"durationMs":0}
+Action "list-jobs" failed: Sign in required
+```
+
+(`AUTHENTICATION` because the CLI has no identity until `AGENT_USER_EMAIL` / `AGENT_ORG_ID` are
+set; with them the action runs and prints `[]`.) The runner's own banner text — "Run any action
+with --help for usage details" — is not implemented for `defineAction`-style local actions in
+0.176.5.
+
+Impact: T08's second acceptance command cannot pass as written. The same line is likely to be
+copied into T09, T10 and T27.
+
+Proposed handling: the two commands that do print the parameter list were run and their output
+recorded in the pull request instead:
+
+- `pnpm action --help` lists every app action by name.
+- Any call that fails schema validation prints the full signature, e.g.
+  `pnpm action list-jobs --status nope` →
+  `Invalid action parameters — status: … Expected: { status?: "scheduled"|"in_progress"|"completed"|"archived", customerId?: string, from?: string, to?: string, includeArchived?: boolean } (where * = required, ? = optional).`
+
+The acceptance line should become one of those two, in this task file and in the later ones.
+
+Resolution:
+
+## 2026-09-06 T08 — the in-memory repositories return rows unordered; the D1 ones order them
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B7 gives one `list` signature per
+repository and says nothing about ordering; T07 chose `ORDER BY scheduled_at ASC, id ASC`
+(`SELECT_JOBS_PARTS.order`) and `ORDER BY name ASC, id ASC`
+(`SELECT_CUSTOMERS_PARTS.order`) in `src/infrastructure/d1/sql.ts`.
+
+Observed: `tests/fixtures/in-memory.ts` returns `Array.from(map.values()).filter(...)`, i.e.
+insertion order, for both `customers.list` and `jobs.list`. A `listJobs` unit test that asserted
+`scheduled_at` order passed against D1 and failed against the fixture. (`operations.listRecent`
+and `listForResource` do sort, so only the two `list` methods diverge.)
+
+Impact: no acceptance command fails. `tests/unit/application/queries.test.ts` cannot assert
+ordering, so it asserts sets (its `ids()` helper sorts) and carries a comment pointing here.
+
+Proposed handling: left both implementations as they are — T08 was asked to reconcile the `to`
+filter only — and recorded it. The fix is three lines in the fixture (sort by `scheduledAt`
+then `id`, and by `name` then `id`); a task that needs order-sensitive unit tests, or T15's
+integration suite, should make it.
+
+Resolution:
+
+## 2026-09-06 T08 — B9's "creates are never redone" cannot be evaluated from resource versions
+
+Expected (plan reference): `docs/plan/tasks/T08-queries.md` step 2 —
+`redoable` "computed with `canUndo` and the redo rule from B9 against the current resource
+versions — load each distinct resource once". B9's redo rule has three parts: the operation is
+an undo that has not itself been reverted (1), the resource is still at `undoOp.versionAfter`
+(2), and the original forward operation was not a create, because "creates are never redone
+(their undo is a compensation): INVARIANT" (3).
+
+Observed: parts 1 and 2 are properties of the operation row and the resource version. Part 3 is
+a property of a *different* row — the forward operation at `undoOp.relatedOperationId` — which
+is not necessarily inside the page `listRecent` returned, and loading it per undo operation is
+the N+1 the same sentence forbids.
+
+Impact: `listRecentActivity` in `src/application/use-cases/list-recent-activity.ts`. An undo of
+a `create-customer` or `create-job` is reported `redoable: true`; `redo-operation` (T10) will
+refuse it with INVARIANT.
+
+Proposed handling: implemented parts 1 and 2 only, with the flag documented in the use case as
+an affordance rather than an authority (T10's `redoOperation` re-checks everything). If the
+false positive matters to the UI, the cheapest fix is a `payload` or `classification` on the
+undo row that records whether its forward operation was a create, written by T10 where the
+forward operation is already loaded.
+
+Resolution:
+
+## 2026-09-06 T08 — the generated registry is `actions-registry.ts`, not `.js`
+
+Expected (plan reference): `docs/plan/02-framework-facts.md` F12,
+"`.generated/actions-registry.js` is produced by the framework build/dev step from `actions/`".
+
+Observed: `pnpm dev` writes `.generated/actions-registry.ts` and `.generated/action-types.d.ts`;
+no `.js` file is produced. `server/plugins/agent-chat.ts` imports
+`"../../.generated/actions-registry.js"` and works, because that is the TypeScript ESM
+convention for importing a `.ts` module.
+
+Impact: none observed — the import specifier the scaffold uses is correct as written. Recorded
+so a later task does not go looking for a file that is never written.
+
+Proposed handling: none; F12's file name should read `.ts`.
 
 Resolution:
