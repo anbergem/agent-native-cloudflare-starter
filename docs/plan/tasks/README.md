@@ -16,7 +16,7 @@ Update this table in the same pull request that delivers the task. Pick the lowe
 | T07 | Infrastructure: repositories, atomic writes, container | T06 | done (PR #9) |
 | T08 | Query use cases and actions | T07 | done (PR #10) |
 | T09 | Command use cases and actions | T08 | done (PR #11) |
-| T10 | Undo and redo | T09 | in-progress |
+| T10 | Undo and redo | T09 | done (PR #12) |
 | T11 | Seed scenario and seed script | T07 | todo |
 | T12 | Worker smoke script | T10, T11 | todo |
 | T13 | Integration tests through the CLI surface | T10, T11 | todo |
