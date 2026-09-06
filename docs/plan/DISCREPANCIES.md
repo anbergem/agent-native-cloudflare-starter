@@ -754,3 +754,97 @@ outcome the example states (A's undo CONFLICT, B's undo ok at v15, A's undo stil
 asserts the refusal of the literal order first so the reason the order is swapped is in the test
 rather than only here. B9's prose should swap the two actions.
 Resolution: 2026-09-06 — B9 updated: A reschedules v12→13, B completes v13→14; same outcomes.
+
+## 2026-09-06 T11 — the framework's `organizations` table does not exist until the app has served a request
+
+Expected (plan reference): `docs/plan/tasks/T11-seed.md` step 2 — the seed's order is "(1) if
+`--reset`, execute reset SQL; (2) execute scenario SQL … (3) unless `--skip-users`, for each
+user: `POST …/auth/register`", and `docs/plan/03-blueprint.md` B12 has `buildScenarioSql()`
+insert into `organizations` and `org_members`. Nothing says the two tables have to be created
+first, and `docs/plan/tasks/T11-seed.md` step 4 puts `pnpm db:reset && pnpm db:seed` in one
+command line for the Node target.
+
+Observed: `organizations` and `org_members` are framework-owned (F6) and are created by the
+framework's own migration runner, not by `migrations/`, so `pnpm db:reset` leaves a database
+with the application tables and without those two. Seeding it then fails:
+
+```
+$ pnpm db:reset && pnpm db:seed:worker
+seed: target d1-local, 28 scenario statements, 5 users
+✘ [ERROR] no such table: organizations: SQLITE_ERROR
+```
+
+F10 already records the cause ("the framework's own table creation runs during the first
+request that touches the database") but not that it gates the seed. The two runtimes differ,
+and only one of them is as bad as F10 says:
+
+- `pnpm dev` (Node) applies the framework migrations **at boot**, with no request: `/tmp/dev.log`
+  shows `[db] Applying 18 migration(s) on SQLite/libsql… v1001 …` above the first `GET`. A
+  started dev server is enough, which is why the acceptance line passes as written.
+- `wrangler dev` (Worker) defers them to the first request that touches the database, exactly as
+  F10 says. One `GET /_agent-native/ping` does it — the `wrangler dev` log shows all 18 `v10xx`
+  migrations applied before that first `ping` returns.
+
+Impact: T11 step 2 (the order is right, but it has an unstated precondition). Neither acceptance
+command changes: both start a server before seeding. `INSERT OR IGNORE` cannot help — the table
+is missing, not the row.
+
+Proposed handling: kept the seed's statement list exactly as B12 specifies — copying the
+framework's DDL into this repository would be a second, drifting definition of a
+framework-owned table — and made the failure name its own fix: `missingOrgTableHint` in
+`scripts/seed.mjs` recognises `no such table: organizations|org_members` and prints the one
+instruction that resolves it (start the server, let it answer `ping`, then seed). The rule for
+every later task is: **a database can only be seeded after the app has been pointed at it — the
+Node dev server having booted, or the Worker having answered one request.** T12 (Worker smoke)
+and T16 (Playwright, which the plan has applying the scenario SQL *before* starting the Worker)
+both run against `wrangler dev` and so must poll `ping` before seeding; T16's order as written
+in the plan will fail.
+
+T13 is the harder case: it seeds `data/test-integration.db` from `buildScenarioSql()` with no
+server at all, and `tests/integration/global-setup.ts` runs `migrations/` only. A `getDbExec()`
+query is *not* enough — T07 already found this and hand-wrote the framework's v1002 DDL in
+`tests/integration/repositories.test.ts` (`describe("membership reader")`), and after
+`pnpm test:integration` that database has `org_members` and still no `organizations`. So T13
+either starts a server to build its database, or extends that existing hand-written DDL to
+cover `organizations` as well. The second is the smaller change and keeps the suite hermetic,
+at the cost of a copy of two framework tables in one test file, which T07 has already accepted
+for one of them.
+
+Resolution: <pending>
+
+## 2026-09-06 T11 — reading `SEED_PASSWORD` from `process.env` fails the framework's `no-env-credentials` guard
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B13 lists `SEED_PASSWORD` as an
+environment variable per environment class, `.env.example` and `.dev.vars.example` already
+name it, and `docs/plan/tasks/T11-seed.md` step 2 says "Password from `SEED_PASSWORD` (default
+from B12)".
+
+Observed: `agent-native doctor`'s `no-env-credentials` guard treats it as a user credential and
+fails the Worker build, not just the doctor:
+
+```
+$ pnpm build:worker
+[doctor] 1 finding(s) from `agent-native doctor` — fix them before the build can continue.
+  [no-env-credentials] scripts/seed.mjs:389 — process.env.SEED_PASSWORD read — not a
+  deploy-level allowlisted key. User credentials must be read via
+  resolveCredential(key, { userEmail, orgId }), never process.env.
+[doctor] Failing build: the doctor.failOnBuild gate is enabled (default: true).
+```
+
+`resolveCredential(key, { userEmail, orgId })` is the alternative the guard names, and it does
+not apply: `scripts/seed.mjs` runs outside any request, so there is no `userEmail` or `orgId`
+to resolve against, and the value is the password of the accounts the script is about to
+create rather than a credential belonging to a user.
+
+Impact: T11 step 2 and, because the gate runs inside `agent-native build`, the `pnpm
+build:worker` half of step 4.
+
+Proposed handling: the read carries the guard's own documented opt-out (F6/F10 record the
+convention; `src/infrastructure/env.ts` and `server/plugins/00-env-check.ts` already use it for
+the same reason) — `// guard:allow-env-credential — seed script's own configuration, never
+logged`, on the line directly above the read, which is the only placement the guard accepts.
+The password is never printed: `scripts/seed.mjs` logs step lines and HTTP statuses, never a
+request body. Any later task that reads `SEED_PASSWORD` (T12's smoke, T16's Playwright
+fixtures, T19/T20's workflows) needs the same marker.
+
+Resolution: <pending>
