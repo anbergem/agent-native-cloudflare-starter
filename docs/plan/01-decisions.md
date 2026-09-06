@@ -235,3 +235,26 @@ Decision: GitHub "Use this template" is the primary path. After the first stable
 the repository as an Agent-Native community template so `create --template
 community:<owner>/<repo>#<tag>` also works. Porting between the template and apps uses
 `git format-patch` / `git am --3way`, documented in `docs/template-workflow.md`.
+
+## D26 — Integration-heavy applications keep the same boundary
+
+Context: the first real application built from this template will implement most of its
+functionality as an integration with an external system rather than with its own tables.
+Decision: nothing above the port boundary changes. Use cases still resolve the actor, check a
+capability, scope to the organization, validate, record an operation and are audited. What
+changes is the adapter behind a port: vendor-owned aggregates are reached through ports
+implemented by API adapters; our own aggregates, and any read model or cache synced from the
+vendor, live in D1. Three rules follow and are demonstrated by `send-job-to-accounting`
+(blueprint B22, task T27):
+1. Undo applies only to data we own. A command with an external effect is classified
+   `compensatable` (a documented compensating command exists) or `irreversible`, never
+   `reversible`.
+2. A local write and a vendor call are two steps, never one transaction. The vendor call
+   carries an idempotency key derived from our resource id; the local "sent" state is a
+   separate version-guarded commit; a retry after a partial failure asks the vendor with the
+   same key and records the answer.
+3. Agents reach external writes only through our actions. Irreversible external effects set
+   `needsApproval: true` so the agent must obtain a human approval for that exact call.
+Consequences: `docs/integrations.md` becomes a first-class document; the sample app gains one
+integration-backed command with a mock adapter; the customer app replaces the mock with a real
+adapter and keeps everything else.

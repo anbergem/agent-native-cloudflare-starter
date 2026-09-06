@@ -37,10 +37,12 @@ Depends on: T21, T22. Read: the whole plan; the original spec sections 26, 29, 3
    not roll back D1, local runner, D1 jurisdiction); `docs/testing.md` (layers, commands, what
    each proves, evals vs Playwright, no-phone-home assertion); `docs/undo-and-history.md`
    (classification table, ledger vs audit trail, algorithm, conflict rule, UI behaviour);
-   `docs/integrations.md` (ports/adapters rule, MCP vs vendor API guidance, the
-   `ExternalAccountingSystem` example interface and a mock adapter in
-   `src/application/ports/external-accounting.ts` + `src/infrastructure/mock/mock-accounting.ts`
-   with one unit test — implement these two small files in this task); `docs/deployment.md`
+   `docs/integrations.md` (first-class, per D26 and B22: the boundary that never moves; where
+   data lives — own aggregates in D1, vendor-owned aggregates behind API-backed ports, optional
+   read models synced from the vendor; the two-step write with idempotency keys; classification
+   of external effects; `needsApproval` for the agent; MCP versus vendor API guidance; error
+   mapping and timeouts; how to replace the mock adapter with a real one and where its
+   credentials live; the walk-through of `send-job-to-accounting` as the worked example); `docs/deployment.md`
    (environments, Wrangler config, secrets, workflows, promotion, smoke, Cloudflare Access on
    staging optional, Node + libSQL fallback); `docs/runbook.md` (every item of spec section 26
    as a heading with commands); `docs/observability.md` (Workers Logs, structured action log
@@ -52,8 +54,7 @@ Depends on: T21, T22. Read: the whole plan; the original spec sections 26, 29, 3
 
 ## Deliverables
 
-All files above plus `src/application/ports/external-accounting.ts`,
-`src/infrastructure/mock/mock-accounting.ts`, `tests/unit/infrastructure/mock-accounting.test.ts`.
+All files above.
 
 ## Acceptance
 

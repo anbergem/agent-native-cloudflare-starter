@@ -97,7 +97,8 @@ export type JobStatus = "scheduled" | "in_progress" | "completed" | "archived";
 export interface Job {
   id: string; orgId: string; customerId: string; title: string; description: string;
   status: JobStatus; scheduledAt: string; assignedTo: string | null; completedAt: string | null;
-  archivedAt: string | null; version: number; createdBy: string; createdAt: string; updatedAt: string;
+  archivedAt: string | null; accountingReference: string | null; accountingSentAt: string | null;
+  version: number; createdBy: string; createdAt: string; updatedAt: string;
 }
 export interface NewJobInput { id: string; orgId: string; customerId: string; title: string; description?: string; scheduledAt: string; assignedTo?: string | null; createdBy: string; now: string; }
 export function createJob(input: NewJobInput): Job;            // title 1..200, description <= 5000, scheduledAt valid ISO; status scheduled
@@ -106,6 +107,7 @@ export function completeJob(job: Job, now: string): Job;       // allowed from s
 export function rescheduleJob(job: Job, scheduledAt: string, now: string): Job; // allowed from scheduled or in_progress; INVARIANT if same instant
 export function archiveJob(job: Job, now: string): Job;        // allowed from any status except archived; sets archivedAt
 export function restoreJobStatus(job: Job, previous: { status: JobStatus; completedAt: string | null; archivedAt: string | null }, now: string): Job; // used by undo; no transition rule check, but version + 1
+export function markSentToAccounting(job: Job, reference: string, now: string): Job; // INVARIANT unless status === "completed" and accountingReference === null; sets accountingReference/accountingSentAt; version + 1
 export const JOB_TRANSITIONS: Readonly<Record<JobStatus, readonly JobStatus[]>> = {
   scheduled: ["in_progress", "completed", "archived"],
   in_progress: ["completed", "archived"],
@@ -143,6 +145,7 @@ export const OPERATION_CLASSIFICATION: Readonly<Record<string, OperationClassifi
   "create-customer": "compensatable", "archive-customer": "reversible",
   "create-job": "compensatable", "reschedule-job": "reversible", "start-job": "reversible",
   "complete-job": "reversible", "archive-job": "reversible",
+  "send-job-to-accounting": "irreversible",
   "undo-operation": "reversible", "redo-operation": "reversible",
 };
 export function canUndo(op: Operation, currentVersion: number): { ok: true } | { ok: false; reason: "already-undone" | "irreversible" | "conflict" | "not-forward" };
@@ -168,19 +171,19 @@ resource id. `INTERNAL` messages are the constant `"Unexpected error"`.
 export type Role = "owner" | "admin" | "member";
 export type Capability =
   | "customers:read" | "customers:create" | "customers:archive"
-  | "jobs:read" | "jobs:create" | "jobs:transition" | "jobs:reschedule"
+  | "jobs:read" | "jobs:create" | "jobs:transition" | "jobs:reschedule" | "jobs:export"
   | "history:read" | "history:undo";
 export const ROLE_CAPABILITIES: Readonly<Record<Role, readonly Capability[]>> = {
   member: ["customers:read", "customers:create", "jobs:read", "jobs:create", "jobs:transition", "jobs:reschedule", "history:read", "history:undo"],
-  admin:  [...member, "customers:archive"],
+  admin:  [...member, "customers:archive", "jobs:export"],
   owner:  [...admin],
 };
 export function hasCapability(role: Role, cap: Capability): boolean;
 export function requireCapability(actor: Actor, cap: Capability): void; // throws AppError("AUTHORIZATION", `Role ${role} may not ${cap}`)
 ```
 
-`archive-customer` is the admin-only demonstration; `member cannot perform an owner-only
-operation` tests use it. Organization administration (invites, roles) is framework-owned and
+`archive-customer` and `send-job-to-accounting` are the admin-only demonstrations; `member
+cannot perform an owner-only operation` tests use `archive-customer`. Organization administration (invites, roles) is framework-owned and
 already restricted to owner/admin.
 
 ## B7. Actor and ports (`src/application/actor.ts`, `src/application/ports.ts`)
@@ -216,7 +219,11 @@ export interface OperationRepository {
   listForResource(orgId: string, type: ResourceType, id: string, limit: number): Promise<Operation[]>;
 }
 export interface IdempotencyStore { find(orgId: string, action: string, key: string): Promise<string | null>; } // returns resourceId
-export interface Dependencies { clock: Clock; ids: IdGenerator; membership: MembershipReader; customers: CustomerRepository; jobs: JobRepository; operations: OperationRepository; idempotency: IdempotencyStore; }
+export interface ExternalAccountingSystem {          // src/application/ports/external-accounting.ts
+  createInvoiceDraft(input: { idempotencyKey: string; orgId: string; customer: { id: string; name: string }; job: { id: string; title: string; completedAt: string } }): Promise<{ externalReference: string; alreadyExisted: boolean }>;
+  // throws ExternalSystemError (src/application/ports/external-accounting.ts) with a safe message; the use case maps it to AppError EXTERNAL
+}
+export interface Dependencies { clock: Clock; ids: IdGenerator; membership: MembershipReader; customers: CustomerRepository; jobs: JobRepository; operations: OperationRepository; idempotency: IdempotencyStore; accounting: ExternalAccountingSystem; }
 ```
 
 `commit` semantics: one atomic unit containing (1) the resource UPDATE guarded by
@@ -261,6 +268,7 @@ Per use case:
 | `startJob` | jobs:transition | startJob | restore-job-status | |
 | `completeJob` | jobs:transition | completeJob | restore-job-status | |
 | `archiveJob` | jobs:transition | archiveJob | restore-job-status | |
+| `sendJobToAccounting` | jobs:export | markSentToAccounting | none (`irreversible`) | B22: vendor call with idempotency key `job:<jobId>`, then version-guarded local commit; admin/owner only; action has `needsApproval: true` |
 | `undoOperation` | history:undo | per inverse | forward re-application | B9 |
 | `redoOperation` | history:undo | per original action | inverse again | B9 |
 
@@ -378,6 +386,13 @@ CREATE TABLE idempotency_keys (
 );
 ```
 
+`migrations/0002_job_accounting.sql` (added by T27, an example of an additive "expand" migration):
+
+```sql
+ALTER TABLE jobs ADD COLUMN accounting_reference TEXT;
+ALTER TABLE jobs ADD COLUMN accounting_sent_at TEXT;
+```
+
 `payload` and `inverse` hold JSON text. No foreign keys to framework tables (they are created
 by the framework at runtime, possibly after this migration). `server/db/schema.ts` mirrors
 these four tables with the framework helpers so `agent-native doctor` sees `org_id` on every
@@ -401,8 +416,8 @@ export async function runAtomic(exec: DbExecLike, statements: Statement[]): Prom
 
 ```sql
 -- 1
-UPDATE jobs SET status = ?, scheduled_at = ?, assigned_to = ?, completed_at = ?, archived_at = ?, version = ?, updated_at = ?
-WHERE org_id = ? AND id = ? AND version = ?;
+UPDATE jobs SET status = ?, scheduled_at = ?, assigned_to = ?, completed_at = ?, archived_at = ?, accounting_reference = ?, accounting_sent_at = ?, version = ?, updated_at = ?
+WHERE org_id = ? AND id = ? AND version = ?;   -- accounting columns exist from migration 0002 (T27); until then omit them
 -- 2
 INSERT INTO operations (id, org_id, kind, action, resource_type, resource_id, classification, version_before, version_after, payload, inverse, related_operation_id, undone_by_operation_id, performed_by, performed_via, performed_at)
 SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?
@@ -621,7 +636,7 @@ Error display: map `errorCode` to `errors.<CODE>` catalog keys, fall back to the
 ## B18. Testing design
 
 - Unit (`tests/unit`): domain transitions and invariants; authorization matrix; every use case
-  with in-memory repositories (`tests/fixtures/in-memory.ts`) including org isolation (actor in
+  (including `send-job-to-accounting` with the mock accounting adapter, B22) with in-memory repositories (`tests/fixtures/in-memory.ts`) including org isolation (actor in
   `org_other` cannot read/mutate `org_acme` data → NOT_FOUND, never leaks); undo/redo including
   the B9 conflict scenario; SQL scoping test; config hygiene test; runner error mapping.
 - Integration (`tests/integration`): against a fresh Node SQLite DB (`DATABASE_URL=file:./data/test-integration.db`) migrated with `scripts/migrate-local.mjs` and seeded with SQL: real D1-shaped repositories through `getDbExec()`; CLI surface parity `AGENT_USER_EMAIL=member1@example.invalid AGENT_ORG_ID=org_acme pnpm action complete-job '{"jobId":"job_in_progress"}'` returns the job with status completed and a new `forward` operation exists; the same via `AGENT_ORG_ID=org_other` returns NOT_FOUND.
@@ -699,3 +714,38 @@ auth vs authz, org scoping, layers, ports/adapters, audit/undo, CI/CD, environme
 `docs/template-workflow.md` (porting with format-patch, community template registration),
 `docs/repository-settings.md` (branch protection, environments). Each has the sections listed
 in T23.
+
+## B22. External integration pattern (`send-job-to-accounting`)
+
+Purpose: prove, with tests, how a command that writes to an external system fits the same
+boundary. Files: `src/application/ports/external-accounting.ts` (port + `ExternalSystemError`),
+`src/infrastructure/mock/mock-accounting.ts` (deterministic adapter: returns
+`{ externalReference: "ACC-" + job.id, alreadyExisted: <key seen before> }`, keeps an in-memory
+map of keys, can be told to fail with `failNextCall(message)` for tests),
+`src/application/use-cases/send-job-to-accounting.ts`, `actions/send-job-to-accounting.ts`.
+
+Use case `sendJobToAccounting(deps, actor, { jobId, expectedVersion? })`:
+1. `requireCapability(actor, "jobs:export")`.
+2. Load job (NOT_FOUND) and customer (NOT_FOUND); `expectedVersion` check (CONFLICT).
+3. Domain precondition through `markSentToAccounting` dry run: status must be `completed` and
+   `accountingReference` must be null (INVARIANT "Job is not completed" / "Job was already
+   sent to accounting").
+4. Call `deps.accounting.createInvoiceDraft({ idempotencyKey: "job:" + job.id, orgId, customer, job })`.
+   `ExternalSystemError` → `AppError("EXTERNAL", "Accounting system unavailable: <safe message>")`;
+   nothing is written locally.
+5. `next = markSentToAccounting(job, result.externalReference, now)`; operation: kind `forward`,
+   action `send-job-to-accounting`, classification `irreversible`, inverse `null`, payload
+   `{ externalReference, alreadyExisted }`; `deps.jobs.commit({ job: next, expectedVersion: job.version, operation })`.
+   A CONFLICT here means someone changed the job between steps 2 and 5; the vendor already holds
+   the draft under the idempotency key, so the caller retries and step 4 returns
+   `alreadyExisted: true` with the same reference. This is the documented two-step pattern.
+6. Return `{ resource: next, operationId, externalReference }`.
+
+Action: `needsApproval: true` (the agent must get a human approval for the exact call),
+`mcpTool: true`, audit target job, summary `Sent job <id> to accounting (<reference>)`,
+description states it is irreversible and requires the job to be completed.
+
+Container: `accounting` is the mock adapter in every environment of the starter. A real
+adapter is added by implementing the port in `src/infrastructure/<vendor>/` and selecting it in
+the container from `APP_ENV`-independent configuration (documented in `docs/integrations.md`,
+never in this sample).

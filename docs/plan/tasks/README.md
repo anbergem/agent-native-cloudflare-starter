@@ -20,7 +20,7 @@ Update this table in the same pull request that delivers the task. Pick the lowe
 | T11 | Seed scenario and seed script | T07 | todo |
 | T12 | Worker smoke script | T10, T11 | todo |
 | T13 | Integration tests through the CLI surface | T10, T11 | todo |
-| T14 | User interface | T10 | todo |
+| T14 | User interface | T10, T27 | todo |
 | T15 | Internationalization | T14 | todo |
 | T16 | Playwright end-to-end suite | T12, T15 | todo |
 | T17 | Agent evals | T10, T11 | todo |
@@ -33,9 +33,10 @@ Update this table in the same pull request that delivers the task. Pick the lowe
 | T24 | Bootstrap checklist and rename script | T23 | todo |
 | T25 | Norwegian Bokmål upstream change (prepared for maintainer review) | T15 | todo |
 | T26 | Final verification and report | T24, T25 | todo |
+| T27 | External integration port and `send-job-to-accounting` | T10 | todo |
 
 Parallelism: T04 and T05 can run in parallel with T02/T03. T11 can run in parallel with
-T08–T10. T14/T15 can run in parallel with T12/T13. T25 can run any time after T15.
+T08–T10. T27 runs right after T10 and before T14. T14/T15 can run in parallel with T12/T13. T25 can run any time after T15.
 
 ## Common acceptance rule
 

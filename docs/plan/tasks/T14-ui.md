@@ -2,7 +2,7 @@
 
 Goal: the minimal, usable UI from B17 on top of the scaffold's shell, calling only actions.
 
-Depends on: T10. Read: F4 (client imports), F5 (client hooks); B2 (ui rules), B17; D08.
+Depends on: T10, T27. Read: F4 (client imports), F5 (client hooks); B2 (ui rules), B17, B22; D08, D26.
 
 ## Steps
 
@@ -21,8 +21,10 @@ Depends on: T10. Read: F4 (client imports), F5 (client hooks); B2 (ui rules), B1
    `get-*` queries and call `toast(<message>, { action: { label: t("common.undo"), onClick: () =>
    undo(operationId) } })`; after a successful undo, toast with a Redo action. On error show
    `t("errors." + errorCode)` when `errorCode` is present, else `actionErrorMessage(err)`.
-4. Role-aware UI: `useOrgRole()` hides the archive-customer button for members; the server
-   still enforces (T09).
+4. Role-aware UI: `useOrgRole()` hides the archive-customer button and the "Send to accounting"
+   button (job detail, visible only when the job is completed and not yet sent; opens a
+   confirmation dialog stating the action is irreversible; shows the returned reference
+   afterwards) for members; the server still enforces (T09, T27).
 5. Header shows `session.email` and the framework `OrgSwitcher` (keep the scaffold header if it
    already does).
 6. Every user-visible string goes through `useT()`; add keys to `app/i18n/en-US.ts` (T15 adds
