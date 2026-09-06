@@ -687,3 +687,68 @@ repeated and no wrong operation id is returned. Making it exact needs a new port
 decision rather than this task's.
 
 Resolution: 2026-09-06 — B7 gains `OperationRepository.findCreateOperation(orgId, resourceType, resourceId)`; T10 implements it in both repositories and removes the bounded lookup from `command.ts`.
+## 2026-09-06 T10 — B9's undo `inverse` shape is not a member of B4's `InverseCommand` union
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B9 step 5 — build the undo operation with
+"`inverse` = the forward command description needed for redo:
+`{ type: "redo", action: op.action, args: <original semantic args> }`".
+
+Observed: `InverseCommand` (`docs/plan/03-blueprint.md` B4, implemented in
+`src/domain/operation.ts`) has five variants — `restore-job-status`,
+`restore-job-schedule`, `archive-job`, `restore-customer`, `archive-customer` — and no `redo`
+variant, so that object does not type-check as an `Operation.inverse`. The same B9 step then
+supersedes its own instruction: "store the original args on the forward operation as `payload`
+(add `payload: Record<string, unknown> | null` to `Operation`; creates store the create input;
+transitions store `{}`; reschedule stores `{ scheduledAt }`)" — which is what T09 implemented
+and what `redo-operation` actually needs, because it also needs the forward operation's
+*action*, and that is on the forward row too.
+
+Impact: T10 step 1, the undo operation row only.
+
+Proposed handling: an undo row carries `inverse: null` and `payload: {}`; `redoOperation` reads
+the action and arguments to replay from the forward operation it reaches through
+`relatedOperationId`, which B9's own redo step 3 tells it to load anyway. Nothing reads an undo
+row's `inverse`: `canUndo` refuses an undo as `not-forward` without looking at it. A *redo* row
+does carry an inverse — the forward operation's own — because B9 lets a redo be undone
+(`canUndo` accepts kind `redo`), and that is the inverse such an undo must apply.
+
+## 2026-09-06 T10 — B9's redo cannot redo the undo of a redo, a state B9's own rules allow
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B9, redo step 3 — "Load the forward op
+`undoOp.relatedOperationId`; re-run its domain transition with the stored `payload`".
+
+Observed: `canUndo` (B4) accepts `kind === "redo"`, so a redo may be undone, and that undo's
+`relatedOperationId` names the *redo* row. That row's `action` is `redo-operation`, not a domain
+command, so "re-run its domain transition" has nothing to run: the sequence
+complete → undo → redo → undo leaves an undo operation that B9's algorithm cannot redo. Reaching
+the original forward operation would mean walking `relatedOperationId` twice (undo → redo →
+undo → forward), which B9 does not describe.
+
+Impact: `src/application/use-cases/redo-operation.ts` only, and only for that fourth step;
+undo → redo → undo all work.
+
+Proposed handling: refused with `AppError("INVARIANT", "This operation cannot be redone")` —
+never a guess and never a wrong write — with the test
+`refuses to redo the undo of a redo, rather than guessing` in
+`tests/unit/application/undo.test.ts` pinning the behaviour. If the UI wants an unlimited
+undo/redo toggle (T14), the cheapest fix is to follow `relatedOperationId` while the operation
+it names is itself an undo or redo, which is a B9 decision rather than this task's.
+
+## 2026-09-06 T10 — B9's concurrency example cannot happen in the order it is written
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B9, last paragraph — "user A completes
+job v12→v13 (op1); user B reschedules v13→v14 (op2); A calls undo(op1) → CONFLICT; B calls
+undo(op2) → ok, v15; A calls undo(op1) → still CONFLICT (version 15 ≠ 13)".
+
+Observed: the second step is impossible. `rescheduleJob` (B4, `src/domain/job.ts`) is "allowed
+from `scheduled` or `in_progress`" and throws `INVARIANT "Cannot reschedule a job that is
+completed"` for a job A has just completed. Verified inside the required test: the literal
+sequence returns `INVARIANT`, not a version 14.
+
+Impact: T10 step 4, the concurrency test only.
+
+Proposed handling: the test runs the two commands in the order the domain allows — A
+reschedules v12→v13, B completes v13→v14 — which preserves every version number and every
+outcome the example states (A's undo CONFLICT, B's undo ok at v15, A's undo still CONFLICT), and
+asserts the refusal of the literal order first so the reason the order is swapped is in the test
+rather than only here. B9's prose should swap the two actions.

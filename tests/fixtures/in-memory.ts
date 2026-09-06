@@ -251,6 +251,24 @@ function createOperationRepository(state: InMemoryState): OperationRepository {
         .sort(byMostRecentFirst)
         .slice(0, limit);
     },
+    // `versionBefore === 0` identifies a create, the same predicate
+    // `SELECT_CREATE_OPERATION` uses.
+    findCreateOperation: async (
+      orgId: string,
+      type: ResourceType,
+      id: string,
+    ) => {
+      return (
+        Array.from(state.operations.values()).find(
+          (op) =>
+            op.orgId === orgId &&
+            op.resourceType === type &&
+            op.resourceId === id &&
+            op.kind === "forward" &&
+            op.versionBefore === 0,
+        ) ?? null
+      );
+    },
   };
 }
 

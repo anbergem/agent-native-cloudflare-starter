@@ -14,6 +14,7 @@ import type { DbExecSource } from "./atomic";
 import { resolveExec } from "./atomic";
 import { mapRows, toOperation } from "./mappers";
 import {
+  SELECT_CREATE_OPERATION,
   SELECT_OPERATION_BY_ID,
   SELECT_OPERATIONS_FOR_RESOURCE,
   SELECT_RECENT_OPERATIONS,
@@ -54,6 +55,20 @@ export function createOperationsRepository(
         args: [orgId, type, id, limit],
       });
       return mapRows(rows, toOperation);
+    },
+
+    findCreateOperation: async (
+      orgId: string,
+      type: ResourceType,
+      id: string,
+    ) => {
+      const exec = await resolveExec(source);
+      const { rows } = await exec.execute({
+        sql: SELECT_CREATE_OPERATION,
+        args: [orgId, type, id],
+      });
+      const [operation] = mapRows(rows, toOperation);
+      return operation ?? null;
     },
   };
 }

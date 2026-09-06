@@ -1,12 +1,13 @@
 /**
- * The three things every command use case shares (blueprint B8).
+ * What the use cases in this directory share (blueprint B8, B9).
  *
- * The seven command files are otherwise self-contained, but these three would
- * be copied verbatim into all of them, and two of them are the kind of thing
- * that must never drift between copies: what a command returns, and how a
- * duplicate idempotency key is recognised.
+ * The command files are otherwise self-contained, but these would be copied
+ * verbatim into all of them, and each is the kind of thing that must never
+ * drift between copies: what a command returns, how a duplicate idempotency
+ * key is recognised, and what counts as a create.
  */
 
+import type { Customer, Job, Operation, ResourceType } from "../../domain";
 import { toAppError } from "../errors";
 
 /** What every command returns: the resource as it now is, and the id of the
@@ -14,6 +15,20 @@ import { toAppError } from "../errors";
 export interface CommandResult<T> {
   resource: T;
   operationId: string;
+}
+
+/**
+ * What `undoOperation` and `redoOperation` return (blueprint B9).
+ *
+ * Unlike every other command, these two are told which record to touch by an
+ * operation id rather than by a typed argument, so the resource can be either
+ * kind and the caller cannot know which from the arguments alone.
+ * `resourceType` is therefore part of the result: the action's `audit.target`
+ * needs a type and an id (B16), and a second lookup is the only other way to
+ * learn the type.
+ */
+export interface UndoRedoResult extends CommandResult<Customer | Job> {
+  resourceType: ResourceType;
 }
 
 /**
@@ -59,13 +74,18 @@ export function isIdempotencyKeyViolation(err: unknown): boolean {
 }
 
 /**
- * How far back `listForResource` is asked to look for a resource's creating
- * operation when an idempotent create replays (blueprint B8).
+ * Whether this operation row is the one that created its resource (blueprint
+ * B9).
  *
- * The port returns operations newest first, and the create is the oldest one,
- * so a resource with more than this many operations since would hide it. A
- * replay is a retry of a call that just happened, so in practice the create is
- * the only row there; see `docs/plan/DISCREPANCIES.md` for the case this does
- * not cover.
+ * `versionBefore === 0` is the definition: the resource did not exist before
+ * the operation, which is true of `create-customer` and `create-job` and of
+ * nothing else. It is also the predicate `findCreateOperation` uses in SQL, so
+ * the two agree by construction.
+ *
+ * B9 needs this in two places: `redoOperation` refuses to redo a create's undo
+ * (a create's inverse is a compensation, not something to re-apply), and
+ * `listRecentActivity` reports such an undo as not `redoable`.
  */
-export const CREATE_OPERATION_LOOKUP_LIMIT = 100;
+export function isCreateOperation(op: Operation): boolean {
+  return op.versionBefore === 0;
+}

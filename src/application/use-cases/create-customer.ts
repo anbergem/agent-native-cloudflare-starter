@@ -23,7 +23,6 @@ import type { Dependencies } from "../ports";
 import {
   applyDomain,
   isIdempotencyKeyViolation,
-  CREATE_OPERATION_LOOKUP_LIMIT,
   type CommandResult,
 } from "./command";
 
@@ -56,14 +55,10 @@ async function findCompletedCreate(
   if (resourceId === null) return null;
 
   const customer = await deps.customers.getById(orgId, resourceId);
-  const operations = await deps.operations.listForResource(
+  const created = await deps.operations.findCreateOperation(
     orgId,
     "customer",
     resourceId,
-    CREATE_OPERATION_LOOKUP_LIMIT,
-  );
-  const created = operations.find(
-    (op) => op.kind === "forward" && op.action === ACTION,
   );
   if (!customer || !created) {
     throw new AppError("INTERNAL", "Unexpected error");

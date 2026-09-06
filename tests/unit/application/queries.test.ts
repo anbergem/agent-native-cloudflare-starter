@@ -367,6 +367,46 @@ describe("listRecentActivity", () => {
     expect(undo?.undoable).toBe(false);
   });
 
+  it("marks the undo of a create as not redoable", async () => {
+    const deps = seeded();
+    // The same shape as the test above, but the operation the undo reversed is
+    // a create: `redo-operation` refuses those with INVARIANT (a create's undo
+    // is a compensation, not something to re-apply), so the flag must not
+    // offer it. B9's third redo rule.
+    const customer = deps.state.customers.get(CUSTOMER_B_ID);
+    if (!customer) throw new Error("cus_b missing from the scenario");
+    deps.state.customers.set(customer.id, {
+      ...customer,
+      status: "archived",
+      version: 2,
+    });
+    const forward = deps.state.operations.get("op_create_cus_b");
+    if (!forward) throw new Error("op_create_cus_b missing");
+    deps.state.operations.set(forward.id, {
+      ...forward,
+      undoneByOperationId: "op_undo_create_cus_b",
+    });
+    const undoOp: Operation = {
+      ...forward,
+      id: "op_undo_create_cus_b",
+      kind: "undo",
+      action: "undo-operation",
+      versionBefore: 1,
+      versionAfter: 2,
+      relatedOperationId: forward.id,
+      undoneByOperationId: null,
+      performedAt: "2026-09-04T09:00:00.000Z",
+    };
+    deps.state.operations.set(undoOp.id, undoOp);
+
+    const entries = await listRecentActivity(deps, acmeOwner, {});
+    const undo = entries.find((entry) => entry.id === undoOp.id);
+    // The first two redo rules hold — it is an open undo describing version 2,
+    // which is the customer's current version — and only the third fails.
+    expect(undo?.versionAfter).toBe(2);
+    expect(undo?.redoable).toBe(false);
+  });
+
   it("filters to one resource's history", async () => {
     const deps = seeded();
     const entries = await listRecentActivity(deps, acmeOwner, {
