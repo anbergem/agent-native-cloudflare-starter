@@ -12,10 +12,10 @@ Depends on: T00. Read: B2, B13, B15; F13 (doctor guards); D16, D17.
    scaffold already provides them through the catalog), `vitest` (present), `tsx`.
 2. `package.json` scripts, exactly these names and commands (add the rest in later tasks):
    `dev`: `agent-native dev`; `lint`: `oxlint . && oxfmt --check .`; `typecheck`:
-   `agent-native typecheck`; `doctor`: `agent-native doctor`; `check:boundaries`:
+   `agent-native typecheck`; `agent-native:doctor`: `agent-native doctor` (pnpm 11 has a built-in `doctor` subcommand that shadows a script of that name, so never use `pnpm agent-native:doctor`); `check:boundaries`:
    `node scripts/check-boundaries.mjs`; `check:config`: `node scripts/check-config-hygiene.mjs`;
    `test:unit`: `vitest --run --passWithNoTests`; `check`: `pnpm lint && pnpm typecheck &&
-   pnpm doctor && pnpm check:boundaries && pnpm check:config && pnpm test:unit`; `action`:
+   pnpm agent-native:doctor && pnpm check:boundaries && pnpm check:config && pnpm test:unit`; `action`:
    `agent-native action`. Remove the scaffold's `script` alias and `migrate:production`.
 3. `.oxlintrc.json`: enable the `correctness` category as errors, ignore `dist`, `.output`,
    `.wrangler`, `node_modules`, `.react-router`, `.generated`, `build`, `data`. `.oxfmtrc.json`:

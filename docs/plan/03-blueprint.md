@@ -552,10 +552,10 @@ Locally they come from `.dev.vars`.
 | `db:migrate:production` | `wrangler d1 migrations apply example-jobs-production --remote --env production` |
 | `lint` | `oxlint . && oxfmt --check .` |
 | `typecheck` | `agent-native typecheck` |
-| `doctor` | `agent-native doctor` |
+| `agent-native:doctor` | `agent-native doctor` (never name a script `doctor`: pnpm 11 has a built-in `doctor` subcommand that shadows it) |
 | `check:boundaries` | `node scripts/check-boundaries.mjs` |
 | `check:config` | `node scripts/check-config-hygiene.mjs` (D17 forbidden keys; no `REPLACE_ME` outside env blocks; secrets not in vars) |
-| `check` | `pnpm lint && pnpm typecheck && pnpm doctor && pnpm check:boundaries && pnpm check:config && pnpm test:unit` |
+| `check` | `pnpm lint && pnpm typecheck && pnpm agent-native:doctor && pnpm check:boundaries && pnpm check:config && pnpm test:unit` |
 | `test:unit` | `vitest --run` |
 | `test:integration` | `node scripts/test-integration.mjs` (CLI surface tests against a fresh Node SQLite DB) |
 | `test:e2e` | `playwright test` (expects `dist/` built; CI builds first) |

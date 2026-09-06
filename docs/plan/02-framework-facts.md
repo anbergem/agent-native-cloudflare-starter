@@ -19,8 +19,8 @@ running it under `wrangler dev` with a local D1 binding. Re-verify on every fram
 
 pnpm 11 specifics:
 - Postinstall scripts are blocked unless allowed in `pnpm-workspace.yaml` under `allowBuilds`.
-  The scaffold leaves a placeholder line `workerd: set this to true or false`; it must become
-  `workerd: true`. Also needed: `better-sqlite3`, `esbuild`, `node-pty`, `@resvg/resvg-js`.
+  The chat scaffold lists `tesseract.js`, `node-pty`, `esbuild`, `better-sqlite3`; add
+  `workerd: true` (needed by wrangler). Verified in T00: no other package needed approval.
 - `minimumReleaseAge` policy (24 h) is active by default and the framework's build runs
   `pnpm install` as a preflight, so a package published today fails the build. Keep the policy;
   it is the supply-chain guard.

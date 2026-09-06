@@ -52,7 +52,7 @@ All scaffold files as described, `package.json`, `pnpm-workspace.yaml`, `pnpm-lo
 ```bash
 pnpm install --frozen-lockfile
 pnpm typecheck
-pnpm doctor
+pnpm agent-native:doctor
 node -e "const p=require('./package.json');if(p.dependencies['@agent-native/core']!=='0.176.5')process.exit(1)"
 node -e "const p=require('./package.json');if(p.dependencies['@agent-native/toolkit']!=='0.19.3')process.exit(1)"
 test ! -e CLAUDE.md && test ! -e netlify.toml && test ! -e app/routes/database.tsx
