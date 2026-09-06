@@ -140,3 +140,33 @@ this is the smallest edit that keeps the flag the plan requires. No other scaffo
 change.
 
 Resolution:
+
+## 2026-09-06 T02 — `wrangler.jsonc` is JSONC with trailing commas, which T01's parser rejected
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B14 gives the `wrangler.jsonc` skeleton,
+and `docs/plan/tasks/T01-toolchain.md` step 5 / B15 say `scripts/check-config-hygiene.mjs`
+parses that file ("no `REPLACE_ME` outside env blocks; secrets not in vars"). T01 implemented
+the parse as `JSON.parse(stripJsonComments(source))`, which assumes comments are the only
+JSONC-only syntax in the file.
+
+Observed: `oxfmt` 0.66.0 formats `.jsonc` with `trailingComma: "all"` (our `.oxfmtrc.json`), so
+after `pnpm lint` every object and array in `wrangler.jsonc` ends with a trailing comma. Removing
+them is not an option: `oxfmt --check .`, part of `pnpm lint` and therefore of `pnpm check`,
+then reports the file as unformatted. With the commas in place the T01 parser failed:
+
+```
+wrangler.jsonc: not parseable as JSON after stripping comments (SyntaxError: Expected double-quoted property name in JSON at position 615 (line 25 column 3))
+1 config hygiene finding(s)
+```
+
+Impact: T02 step 5 (extending the checker) and the acceptance command `pnpm check`. Without the
+fix the checker fails on a correctly formatted `wrangler.jsonc` and its `REPLACE_ME` and
+secrets-in-vars rules never run at all.
+
+Proposed handling: added a string-aware `stripTrailingCommas()` next to the existing
+`stripJsonComments()` in `scripts/check-config-hygiene.mjs` and composed the two before
+`JSON.parse`. Commas are overwritten with spaces rather than deleted so byte offsets in a parse
+error still point at the right place in the original file. No behaviour change other than
+accepting the JSONC that the repository's own formatter produces.
+
+Resolution:
