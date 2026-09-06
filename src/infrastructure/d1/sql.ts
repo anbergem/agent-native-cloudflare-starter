@@ -190,6 +190,19 @@ WHERE org_id = ? AND resource_type = ? AND resource_id = ?
 ORDER BY performed_at DESC, id DESC
 LIMIT ?`;
 
+/**
+ * The operation that created a resource, for an idempotent create's replay
+ * (B7, B8). `version_before = 0` is what identifies a create: the resource did
+ * not exist before it, and nothing else can be written with that value. The
+ * `kind = 'forward'` literal excludes an undo or redo row, which is the same
+ * kind of fixed enum comparison the guards in this module already carry.
+ *
+ * No `ORDER BY`: the pair of predicates matches at most one row per resource.
+ */
+export const SELECT_CREATE_OPERATION = `SELECT ${OPERATION_COLUMNS} FROM operations
+WHERE org_id = ? AND resource_type = ? AND resource_id = ? AND kind = 'forward' AND version_before = 0
+LIMIT 1`;
+
 // ---------------------------------------------------------------------------
 // Idempotency keys (D14: creates only)
 // ---------------------------------------------------------------------------

@@ -201,6 +201,31 @@ describe("createCustomer", () => {
     expect(deps.state.customers.size).toBe(customersAfterFirst);
   });
 
+  it("still finds the create operation when newer operations exist", async () => {
+    const deps = seeded();
+    const first = await createCustomer(deps, acmeOwner, {
+      name: "Example Customer C",
+      idempotencyKey: "key-customer-busy",
+    });
+    // Two more operations on the same customer, so the create is no longer the
+    // newest row for its resource — the case the replay reads through
+    // `findCreateOperation` rather than through a page of recent operations.
+    const archived = await archiveCustomer(deps, acmeOwner, {
+      customerId: first.resource.id,
+    });
+    expect(archived.operationId).not.toBe(first.operationId);
+
+    const replay = await createCustomer(deps, acmeOwner, {
+      name: "Example Customer C",
+      idempotencyKey: "key-customer-busy",
+    });
+
+    expect(replay.resource.id).toBe(first.resource.id);
+    // The *create's* id, not the newest operation's.
+    expect(replay.operationId).toBe(first.operationId);
+    expect(operationOf(deps, replay.operationId).versionBefore).toBe(0);
+  });
+
   it("keeps the key scoped to its action and organization", async () => {
     const deps = seeded();
     const first = await createCustomer(deps, acmeOwner, {

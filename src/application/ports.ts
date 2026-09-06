@@ -98,6 +98,16 @@ export interface OperationRepository {
     id: string,
     limit: number,
   ): Promise<Operation[]>;
+  /** The `forward` operation that created this resource — the one row with
+   * `versionBefore === 0` — or `null` when the resource has none. Read by an
+   * idempotent create's replay, which owes the caller the `operationId` of the
+   * create that already happened and cannot find it through the newest-first,
+   * limited `listForResource` (B7). */
+  findCreateOperation(
+    orgId: string,
+    type: ResourceType,
+    id: string,
+  ): Promise<Operation | null>;
 }
 
 export interface IdempotencyStore {

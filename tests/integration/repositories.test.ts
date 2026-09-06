@@ -438,6 +438,45 @@ describe("create", () => {
   });
 });
 
+describe("findCreateOperation", () => {
+  it("finds the create operation of a resource that has moved on since", async () => {
+    // By now `job_acme` also carries `op_complete_job_acme`, so the create is
+    // not the newest row for its resource — which is the whole reason this
+    // statement exists rather than a page of `listForResource` (B7).
+    const history = await operations.listForResource(
+      ORG_ACME_ID,
+      "job",
+      acmeJob.id,
+      10,
+    );
+    expect(history.length).toBeGreaterThan(1);
+    expect(history[0]?.id).not.toBe(`op_create_${acmeJob.id}`);
+
+    await expect(
+      operations.findCreateOperation(ORG_ACME_ID, "job", acmeJob.id),
+    ).resolves.toMatchObject({
+      id: `op_create_${acmeJob.id}`,
+      kind: "forward",
+      versionBefore: 0,
+    });
+    await expect(
+      operations.findCreateOperation(ORG_ACME_ID, "customer", acmeCustomer.id),
+    ).resolves.toMatchObject({ id: `op_create_${acmeCustomer.id}` });
+  });
+
+  it("is null for another organization, another type, and an unknown id", async () => {
+    await expect(
+      operations.findCreateOperation(ORG_OTHER_ID, "job", acmeJob.id),
+    ).resolves.toBeNull();
+    await expect(
+      operations.findCreateOperation(ORG_ACME_ID, "customer", acmeJob.id),
+    ).resolves.toBeNull();
+    await expect(
+      operations.findCreateOperation(ORG_ACME_ID, "job", "job_missing"),
+    ).resolves.toBeNull();
+  });
+});
+
 describe("idempotency keys", () => {
   it("finds the resource a key already created, in that organization only", async () => {
     await expect(

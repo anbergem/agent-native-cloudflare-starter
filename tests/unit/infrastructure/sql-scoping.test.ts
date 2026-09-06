@@ -49,7 +49,7 @@ describe("SQL statements", () => {
     const literals = statement.match(/'[^']*'/g) ?? [];
     expect(literals).toEqual(
       literals.filter((literal) =>
-        ["'active'", "'customer'", "'job'"].includes(literal),
+        ["'active'", "'customer'", "'job'", "'forward'"].includes(literal),
       ),
     );
   });
