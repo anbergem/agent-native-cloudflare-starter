@@ -732,9 +732,12 @@ map of keys, can be told to fail with `failNextCall(message)` for tests),
 Use case `sendJobToAccounting(deps, actor, { jobId, expectedVersion? })`:
 1. `requireCapability(actor, "jobs:export")`.
 2. Load job (NOT_FOUND) and customer (NOT_FOUND); `expectedVersion` check (CONFLICT).
-3. Domain precondition through `markSentToAccounting` dry run: status must be `completed` and
-   `accountingReference` must be null (INVARIANT "Job is not completed" / "Job was already
-   sent to accounting").
+3. Domain precondition through `markSentToAccounting` (T04 messages, now normative): status must
+   be `completed` (INVARIANT "Cannot send to accounting a job that is <status>") and
+   `accountingReference` must be null (INVARIANT "Job was already sent to accounting"). Call the
+   domain function once, after the vendor call, and use a pure precheck helper
+   `assertCanSendToAccounting(job)` exported from `src/domain/job.ts` (add it in T27) before the
+   vendor call so no external call happens for an ineligible job.
 4. Call `deps.accounting.createInvoiceDraft({ idempotencyKey: "job:" + job.id, orgId, customer, job })`.
    `ExternalSystemError` → `AppError("EXTERNAL", "Accounting system unavailable: <safe message>")`;
    nothing is written locally.
