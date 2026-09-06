@@ -16,6 +16,9 @@ Depends on: T07. Read: F6 (tables, endpoints), F10; B12, B13; D16.
    `organizations` and `org_members` rows must include every NOT NULL column found in
    `node_modules/@agent-native/core/dist/org/migrations.js` (record the column list in a comment).
    Keep `seedInMemory` in sync with `buildScenario()` (derive it from the same builders).
+   Also make the in-memory repositories return lists in the same order as the D1 adapters
+   (customers `name, id`; jobs `scheduled_at, id`; operations `performed_at DESC, id DESC`) so
+   unit and integration tests agree (T08 found them unordered).
 2. `scripts/seed.mjs`: arguments `--target node|d1-local|d1-remote`, `--env <wrangler env>`
    (required for `d1-remote`), `--base-url` (default `http://localhost:8080` for node,
    `http://127.0.0.1:8787` for d1-local, required for d1-remote), `--reset`, `--skip-users`.

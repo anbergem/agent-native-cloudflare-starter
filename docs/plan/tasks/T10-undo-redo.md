@@ -13,13 +13,16 @@ Depends on: T09. Read: B4 (`canUndo`), B9, B16; D13.
    and `actions/redo-operation.ts` (`{ operationId }` of an undo operation), both
    `mcpTool: true`, audit target from the loaded operation's resource (`audit.target` receives
    `(args, result)`; use `result.resource` type/id).
-3. Tests `tests/unit/application/undo.test.ts`: undo of each forward action restores the exact
+3. `list-recent-activity`'s `redoable` flag (T08 implemented B9 parts 1–2 only): make it `false`
+   when the undo operation's related forward operation is a create (`create-customer`,
+   `create-job`), loading that operation by id; add a query test for it.
+4. Tests `tests/unit/application/undo.test.ts`: undo of each forward action restores the exact
    previous fields; undo of a create archives the resource; the B9 concurrency scenario;
    `already-undone`, `irreversible` (set a classification manually in state), `not-forward`;
    redo after undo re-applies and marks the undo op; redo refused when the resource moved on;
    redo of a create's undo is INVARIANT; undo/redo operations appear in `list-recent-activity`
    with `kind` set.
-4. Verify on the Node dev server: complete a job via curl, undo via curl (status back, version
+5. Verify on the Node dev server: complete a job via curl, undo via curl (status back, version
    + 1), redo via curl; `list-audit-events` shows `undo-operation` and `redo-operation` rows.
 
 ## Deliverables
@@ -31,4 +34,4 @@ Two use cases, two actions, `tests/unit/application/undo.test.ts`.
 ```bash
 pnpm check
 ```
-plus the step 4 transcript.
+plus the step 5 transcript.

@@ -634,7 +634,7 @@ export default defineAction({
 
 Queries use `http: { method: "GET" }` and `readOnly: true`. Every description states when to
 use the action and whether it is reversible. `view-screen` and `navigate` keep
-`mcpTool: false`. `hello.ts` and `run.ts` are deleted.
+`mcpTool: false`. `hello.ts` is deleted; `run.ts` stays (it is the CLI dispatcher, F5).
 
 Structured log line (`src/infrastructure/logging.ts`): one JSON object per action call:
 `{ "level": "info"|"error", "event": "action", "action", "outcome", "errorCode"?, "caller",
