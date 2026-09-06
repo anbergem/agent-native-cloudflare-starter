@@ -710,6 +710,7 @@ the action and arguments to replay from the forward operation it reaches through
 row's `inverse`: `canUndo` refuses an undo as `not-forward` without looking at it. A *redo* row
 does carry an inverse — the forward operation's own — because B9 lets a redo be undone
 (`canUndo` accepts kind `redo`), and that is the inverse such an undo must apply.
+Resolution: 2026-09-06 — B9 rewritten: undo rows carry `inverse: null`, `payload: {}`; redo reads the forward operation.
 
 ## 2026-09-06 T10 — B9's redo cannot redo the undo of a redo, a state B9's own rules allow
 
@@ -732,6 +733,7 @@ never a guess and never a wrong write — with the test
 `tests/unit/application/undo.test.ts` pinning the behaviour. If the UI wants an unlimited
 undo/redo toggle (T14), the cheapest fix is to follow `relatedOperationId` while the operation
 it names is itself an undo or redo, which is a B9 decision rather than this task's.
+Resolution: 2026-09-06 — B9 updated: refused with INVARIANT `This operation cannot be redone`.
 
 ## 2026-09-06 T10 — B9's concurrency example cannot happen in the order it is written
 
@@ -751,3 +753,4 @@ reschedules v12→v13, B completes v13→v14 — which preserves every version n
 outcome the example states (A's undo CONFLICT, B's undo ok at v15, A's undo still CONFLICT), and
 asserts the refusal of the literal order first so the reason the order is swapped is in the test
 rather than only here. B9's prose should swap the two actions.
+Resolution: 2026-09-06 — B9 updated: A reschedules v12→13, B completes v13→14; same outcomes.
