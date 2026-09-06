@@ -488,7 +488,11 @@ message: production requires `BETTER_AUTH_SECRET` (≥32), `OAUTH_STATE_SECRET`,
 (https), `GOOGLE_SIGN_IN_CLIENT_ID`, `GOOGLE_SIGN_IN_CLIENT_SECRET`, `ANTHROPIC_API_KEY`; forbids
 `AUTH_DISABLED`, `SEED_ENABLED`, `ACCESS_TOKEN(S)`, `AGENT_PROD_CODE_EXECUTION`,
 `DATABASE_URL`. `local` forbids `APP_ENV=production` and any `DATABASE_URL` not starting with
-`file:`. `APP_ENV` missing → treated as `local` on the Node dev server, error on Workers.
+`file:`. `APP_ENV` missing → treated as `local` (there is no reliable way to tell a Worker from the
+dev server inside the pure validator); an unknown value is a violation. Violation strings never
+contain values. Production forbids `DATABASE_URL`, `ACCESS_TOKEN`, `ACCESS_TOKENS` when present at
+all, and treats `AUTH_DISABLED`, `SEED_ENABLED`, `AGENT_PROD_CODE_EXECUTION` as violations only
+when enabled (`""`, `0`, `false`, `off`, `no` pass), so `SEED_ENABLED=0` may be stated explicitly.
 
 ## B14. Worker build pipeline
 
@@ -656,6 +660,7 @@ check `[ok]`/`[fail] <check>: <detail>`.
 | `GET /_agent-native/health` 200, `db === true`, `database.dialect === "d1"` | yes | yes | yes |
 | `GET /api/ready` 200 with `migrations.applied === migrations.expected` | yes | yes | yes |
 | `GET /sign-in` 200 HTML | yes | yes | yes |
+| `GET /` is 200 (the Worker serves the static shell `dist/index.html`; the redirect to `/jobs` is client-side, never expect a 302) | yes | yes | yes |
 | `GET /_agent-native/actions/list-jobs` unauthenticated is 401 | yes | yes | yes |
 | Login with QA user, `org/me.orgId === --expect-org-id` | yes | yes | no |
 | `list-jobs` authenticated is 200 array | yes | yes | no |

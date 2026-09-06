@@ -30,10 +30,13 @@ Depends on: T04. Read: B5, B6, B7, B12 (constants only), B13 (env-check rules); 
    table test; `requireCapability` throws AUTHORIZATION with the exact message);
    `actor.test.ts` (four cases from B7); `errors.test.ts` (`HTTP_STATUS_FOR` complete,
    `fromDomainError` mapping, `toAppError` wraps unknown errors as INTERNAL with message
-   `Unexpected error`); `tests/unit/infrastructure/env-check.test.ts` (production missing each
-   required var → one violation each; production with `SEED_ENABLED=1` → violation; local with
-   `DATABASE_URL=libsql://x` → violation; local with `APP_ENV=production` → violation; a
-   correct production env → empty array).
+   `Unexpected error`); `tests/unit/infrastructure/env-check.test.ts` against the existing pure function from T03
+   (`validateEnvironment`, `resolveEnvironmentClass`): production missing each required var →
+   one violation each; production with `SEED_ENABLED=1` → violation but `SEED_ENABLED=0` → none;
+   production with `DATABASE_URL` present → violation; local with `DATABASE_URL=libsql://x` →
+   violation; `APP_ENV=production` combined with a local file database → violation; unknown
+   `APP_ENV` → violation; missing `APP_ENV` → resolves to `local`; a correct production env →
+   empty array; every violation string contains no value from the input.
 
 ## Deliverables
 

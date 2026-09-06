@@ -149,7 +149,14 @@ Semantics that matter:
   staging) password sign-up works without verification. Verified in the spike: register/login
   worked on a Worker with `NODE_ENV=production` and no provider.
 - `AGENT_NATIVE_DISABLE_AUTO_DEV_ACCOUNT=1` disables the localhost "Continue as local dev"
-  button; we set it so local development uses seeded users.
+  button; we set it so local development uses seeded users. The button markup and its i18n
+  string are still present in the HTML (hidden); verify behaviour via
+  `GET /_agent-native/auth/local-dev` → `{"available":false}`, never by grepping the page.
+- `createAuthPlugin({ rootAuth: false })` is required so the app's `/` route renders; the
+  default `rootAuth: true` serves the sign-in document at `/` for every visitor (T03).
+- On the deployed Worker `/` is answered by the static asset `dist/index.html`, so any redirect
+  from `/` is client-side (`<Navigate to="/jobs" replace />`); a loader `redirect()` at `/`
+  breaks the framework's static-shell render.
 - Organization-level "require Google": `setRequiredAuthProvider(orgId, "google")` from
   `@agent-native/core/org`; exposed in the framework Team page; when set, password login for
   members of that organization is refused with HTTP 403.

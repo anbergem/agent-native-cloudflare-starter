@@ -12,7 +12,9 @@ Depends on: T10, T27. Read: F4 (client imports), F5 (client hooks); B2 (ui rules
    "New customer" dialog + archive button), `customers.$id.tsx`, `activity.tsx` (recent
    operations with Undo/Redo buttons using the `undoable`/`redoable` flags); keep `team.tsx`,
    `settings*.tsx`, `observability.tsx`, `agent.tsx`, `chat.$threadId.tsx`; make `home.tsx`
-   redirect to `/jobs`. Sidebar entries: Jobs, Customers, Activity, Team, Settings.
+   redirect to `/jobs` and set the framework's `app.homePath` to `/jobs` (it is `/home` in
+   `server/plugins/agent-native-email-branding.ts` or `server/plugins/config.ts`; find it with
+   `grep -rn homePath server/`). Sidebar entries: Jobs, Customers, Activity, Team, Settings.
 2. Components under `app/components/jobs/`, `app/components/customers/`,
    `app/components/activity/`: forms use `react-hook-form` (present in the scaffold) with Zod
    for shape only; business rules stay server-side. Status badges; every date-time rendered
