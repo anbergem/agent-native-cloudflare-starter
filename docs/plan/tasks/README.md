@@ -9,7 +9,7 @@ Update this table in the same pull request that delivers the task. Pick the lowe
 | T00 | Scaffold and repository baseline | — | done (PR #2) |
 | T01 | Toolchain, scripts, hygiene checks | T00 | done (PR #3) |
 | T02 | Worker build pipeline and Wrangler configuration | T01 | done (PR #4) |
-| T03 | Framework configuration and template cleanup | T02 | in-progress |
+| T03 | Framework configuration and template cleanup | T02 | done (PR #5) |
 | T04 | Domain layer | T01 | todo |
 | T05 | Application core: errors, authorization, actor, ports, in-memory doubles | T04 | todo |
 | T06 | Schema, migrations, local migration runner, readiness route | T03, T05 | todo |
