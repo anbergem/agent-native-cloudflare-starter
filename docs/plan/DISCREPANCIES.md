@@ -72,4 +72,4 @@ Proposed handling: ran both and recorded both outputs. Suggest T01, which owns t
 table, standardises on an unambiguous script name for the framework doctor and that later task
 files and CI use `pnpm run doctor`.
 
-Resolution:
+Resolution: 2026-09-06 — the plan now uses the script name `agent-native:doctor` everywhere (B15, T01, all acceptance blocks); no script named `doctor` will exist.
