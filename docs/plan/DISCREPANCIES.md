@@ -392,3 +392,148 @@ output in place and says so. Note for T27: adding `0002_job_accounting.sql` chan
 from one line back to three, which is expected.
 
 Resolution:
+
+## 2026-09-06 T07 — `getDbExec()` advertises both `atomicBatch` and `transaction` until its first query
+
+Expected (plan reference): `docs/plan/02-framework-facts.md` F8 ("On D1: `atomicBatch` present,
+`transaction` absent. On the local file (better-sqlite3) and libsql: `transaction` present
+(BEGIN IMMEDIATE), `atomicBatch` absent") and `docs/plan/03-blueprint.md` B11's `runAtomic`
+("if `exec.atomicBatch`: use it; else if `exec.transaction`: run sequentially inside it").
+
+Observed: F8 describes the executor **after** it has initialised. `getDbExec()` returns a lazy
+proxy (`node_modules/@agent-native/core/dist/db/client.js:1851`) that defines `execute`,
+`transaction` *and* `atomicBatch` up front and only replaces the unsupported one with
+`undefined` when its first `execute()` has chosen a driver. With
+`DATABASE_URL=file:./data/probe.db`:
+
+```
+pre-init:  { execute: 'function', transaction: 'function', atomicBatch: 'function' }
+post-init: { transaction: 'function', atomicBatch: 'undefined' }
+```
+
+So a `runAtomic` that feature-detects on a freshly obtained executor sends a local-file write
+down the `atomicBatch` path, which throws `This database does not support atomic batches.`
+(verified). Calling it again does not help: the failed call leaves `atomicBatch` still defined
+on the proxy. In practice the first database call of a request is the membership lookup in
+`resolveActor`, which would hide this — until the first process where a write happens to come
+first, such as a seed script or an integration test.
+
+Impact: T07 steps 2 and 4 (`runAtomic` and every repository).
+
+Proposed handling: `runAtomic` is exactly B11's three-branch rule and is unchanged. The
+repositories reach their executor through `resolveExec` (`src/infrastructure/d1/atomic.ts`),
+which issues one throwaway `SELECT 1` when — and only when — an executor advertises both
+capabilities, since a real one never does. `tests/integration/repositories.test.ts` exercises
+this: its first database call is a `create`, which fails without the workaround. Suggest F8
+gains a sentence about the pre-initialisation shape.
+
+Resolution:
+
+## 2026-09-06 T07 — B11's audit-row guard lets a lost update write an operation row
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B11's `commit` batch — statement 1 the
+versioned `UPDATE`, statement 2 the operation `INSERT` guarded by
+`EXISTS (SELECT 1 FROM jobs WHERE org_id = ? AND id = ? AND version = ?)   -- new version`,
+with the note "Statement 2's guard makes the batch a no-op when statement 1 did not apply" —
+together with `docs/plan/tasks/T07-infrastructure.md` step 8, which requires that a `commit`
+with a stale version "throws CONFLICT and leaves no operation row".
+
+Observed: the guard is not sufficient, and the first run of the integration test proved it. Two
+callers read `job_acme` at version 1 and both complete it. The winner writes version 2. The
+loser's `UPDATE ... AND version = 1` affects zero rows as intended, but its operation insert is
+guarded on the version *it* wanted to write — also 2 — which now matches the winner's row, so
+the guard passes and an audit row is written for a change that never happened:
+
+```
+AssertionError: expected { id: 'op_stale_job_acme', …(15) } to be null
++ Received: { "action": "complete-job", "versionBefore": 1, "versionAfter": 2, … }
+```
+
+The same batch's optional third statement, `MARK_OPERATION_UNDONE` as B11 spells it, has no
+guard at all, so a refused commit would still mark an earlier operation undone by an audit row
+that was never inserted.
+
+Impact: T07 steps 1, 2 and 4, and the correctness of the undo history every later task reads.
+
+Proposed handling: same statements, corrected guards. The operation insert now runs **first**
+and is guarded on the version the caller read (`expectedVersion`), which is the same predicate
+the update carries; both statements see the same pre-image inside one transaction, so they
+apply together or not at all whatever version the update would have written.
+`MARK_OPERATION_UNDONE` gained `AND EXISTS (SELECT 1 FROM operations WHERE org_id = ? AND
+id = ?)` naming the undoing operation, so it cannot outlive a batch whose guards failed. The
+CONFLICT decision now reads both counts (`affected[0] !== 1 || affected[1] !== 1`) rather than
+B11's `rowsAffected[0]`, because index 0 is no longer the update. Both cases are covered in
+`tests/integration/repositories.test.ts`. Suggest B11 is rewritten to this shape.
+
+Resolution:
+
+## 2026-09-06 T07 — "every exported constant contains `org_id = ?`" cannot hold for the WHERE fragments
+
+Expected (plan reference): `docs/plan/tasks/T07-infrastructure.md` step 1 — "Every constant
+except `SELECT_MEMBER_ROLE` contains `org_id = ?`" and, in the same paragraph, "`SELECT_JOBS`
+supports optional filters by building the WHERE clause in code from a fixed set of fragments
+(status, customer_id, scheduled_at >= ?, scheduled_at < ?) — the fragments are also exported
+constants" — with step 6's test: "iterate every exported string, assert it contains
+`org_id = ?`".
+
+Observed: the two cannot both be true. A fragment is ` AND status = ?`; it has no `org_id` of
+its own and cannot have one, because it is appended to a statement that already carries the
+predicate. Exporting the fragments as loose string constants would make step 6's test fail on
+statements that are correct.
+
+Impact: T07 steps 1 and 6.
+
+Proposed handling: the fragments are exported, but grouped in one frozen record per list
+statement (`SELECT_JOBS_PARTS`, `SELECT_CUSTOMERS_PARTS`) rather than as loose strings, so
+"every exported string" still means "every whole statement" and step 6's assertion holds
+unweakened for all 18 of them. `tests/unit/infrastructure/sql-scoping.test.ts` checks the
+fragments too, against the stricter rule that actually applies to them: each must match a fixed
+`AND <column> <operator> ?` / `ORDER BY …` pattern with at most one placeholder, so no caller
+value can ever reach the SQL text. `SELECT_CUSTOMERS` needed the same treatment as
+`SELECT_JOBS`; step 1 only mentions the latter, but `CustomerRepository.list` takes `status`
+and `search` filters (B7).
+
+Resolution:
+
+## 2026-09-06 T07 — the in-memory `to` filter is inclusive, the SQL fragment T07 specifies is exclusive
+
+Expected (plan reference): `docs/plan/tasks/T07-infrastructure.md` step 1 lists the job filter
+fragments as "(status, customer_id, scheduled_at >= ?, scheduled_at < ?)", i.e. a half-open
+window.
+
+Observed: `tests/fixtures/in-memory.ts` (T05), which the same ports are implemented against and
+which every use-case unit test runs on, filters with
+`.filter((j) => (filter.to ? j.scheduledAt <= filter.to : true))` — inclusive. A job scheduled
+exactly at `to` is returned by the in-memory repository and not by the D1 one.
+
+Impact: no T07 step fails; the difference only surfaces in T08, whose `list-jobs` use case is
+unit-tested against the in-memory repository and integration-tested against this one.
+
+Proposed handling: followed the task file, which is normative for T07 — `SELECT_JOBS_PARTS.to`
+is `AND scheduled_at < ?`. `tests/fixtures/in-memory.ts` was left untouched because it is a T05
+deliverable and this task's scope rule forbids editing it. T08 should either change that one
+character in the fixture (making both half-open, which is what a day or week filter wants) or
+record the inclusive form in B7; the two implementations of one port must not stay divergent.
+
+Resolution:
+
+## 2026-09-06 T07 — the container has to fill `Dependencies.accounting`, which no task before T27 provides
+
+Expected (plan reference): `docs/plan/tasks/T07-infrastructure.md` step 5 lists the container's
+job as `getDependencies(): Dependencies` and names no accounting adapter;
+`docs/plan/03-blueprint.md` B7 makes `accounting: ExternalAccountingSystem` a required field of
+`Dependencies`, and B22 gives the real mock adapter
+(`src/infrastructure/mock/mock-accounting.ts`) to T27.
+
+Observed: `getDependencies()` cannot type-check without an `accounting` value, and T07 is not
+asked to build one.
+
+Impact: T07 step 5 only.
+
+Proposed handling: `container.ts` fills the field with a four-line adapter that throws
+`ExternalSystemError("The accounting system is not configured")`. Nothing calls it before T27
+adds `send-job-to-accounting`, and refusing loudly in the port's own error type is safer than a
+stub that returns a plausible invoice reference. T27 replaces the constant with the real mock
+adapter.
+
+Resolution:
