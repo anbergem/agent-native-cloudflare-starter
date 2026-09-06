@@ -217,6 +217,7 @@ export interface OperationRepository {
   getById(orgId: string, id: string): Promise<Operation | null>;
   listRecent(orgId: string, limit: number): Promise<Operation[]>;
   listForResource(orgId: string, type: ResourceType, id: string, limit: number): Promise<Operation[]>;
+  findCreateOperation(orgId: string, type: ResourceType, id: string): Promise<Operation | null>; // the forward create op (version_before = 0); used by idempotent replays (T10)
 }
 export interface IdempotencyStore { find(orgId: string, action: string, key: string): Promise<string | null>; } // returns resourceId
 export interface ExternalAccountingSystem {          // src/application/ports/external-accounting.ts

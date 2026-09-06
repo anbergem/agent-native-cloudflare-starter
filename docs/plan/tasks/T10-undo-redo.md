@@ -6,6 +6,9 @@ Depends on: T09. Read: B4 (`canUndo`), B9, B16; D13.
 
 ## Steps
 
+0. Port addition (resolves the T09 discrepancy): add `findCreateOperation(orgId, type, id)` to
+   `OperationRepository` in `src/application/ports.ts` (B7), implement it in
+   `src/infrastructure/d1/operations-repository.ts` (`SELECT ... WHERE org_id = ? AND resource_type = ? AND resource_id = ? AND kind = 'forward' AND version_before = 0 LIMIT 1`, add the constant to `sql.ts`) and in `tests/fixtures/in-memory.ts`, then replace the bounded `listForResource` lookup in `src/application/use-cases/command.ts` with it and delete `CREATE_OPERATION_LOOKUP_LIMIT`. Add a unit test for the replay path and an integration test in `tests/integration/repositories.test.ts`.
 1. `src/application/use-cases/undo-operation.ts` and `redo-operation.ts` per B9. Error
    messages exactly as listed there.
 2. Actions `actions/undo-operation.ts` (`{ operationId }`, description: "Undo a previous

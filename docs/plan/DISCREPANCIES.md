@@ -50,8 +50,7 @@ nothing in the dependency graph after `pnpm install` requires it — `pnpm insta
 no "ignored build scripts" warning and `workerd@1.20260903.1` plus
 `@cloudflare/workerd-darwin-arm64@1.20260903.1` built successfully.
 
-Resolution:
-
+Resolution: 2026-09-06 — F1 rewritten to the observed scaffold (add `workerd: true`).
 ## 2026-09-06 T00 — `pnpm doctor` runs pnpm's built-in doctor, not `agent-native doctor`
 
 Expected (plan reference): `docs/plan/tasks/T00-scaffold.md` "Acceptance" lists `pnpm doctor`,
@@ -90,8 +89,7 @@ Impact: T01 step 5 only; the check itself is unchanged in meaning.
 Proposed handling: `scripts/check-config-hygiene.mjs` runs `git check-ignore -q <file>` once per
 file and reports the offending file by name. No plan change needed beyond the command spelling.
 
-Resolution:
-
+Resolution: 2026-09-06 — Accepted; the checker tests one path at a time.
 ## 2026-09-06 T01 — `oxfmt` reformats the plan's Markdown, so `docs/` and `.agents/` are ignored
 
 Expected (plan reference): `docs/plan/tasks/T01-toolchain.md` step 3 ("`.oxfmtrc.json`: … add an
@@ -114,8 +112,7 @@ eight build directories from step 3, so `oxfmt` owns source and root Markdown (`
 and later `README.md`/`ARCHITECTURE.md` from T23) but never the plan or the framework skills.
 `oxfmt --write .` was then run once over the remainder as step 9 requires.
 
-Resolution:
-
+Resolution: 2026-09-06 — Accepted; `docs/` and `.agents/` stay ignored by oxfmt.
 ## 2026-09-06 T01 — `noUncheckedIndexedAccess` breaks two scaffold files
 
 Expected (plan reference): `docs/plan/tasks/T01-toolchain.md` step 8 ("`tsconfig.json`: … `strict:
@@ -139,8 +136,7 @@ Proposed handling: changed both to `decodeURIComponent(match[1] ?? "")`. The reg
 this is the smallest edit that keeps the flag the plan requires. No other scaffold file needed a
 change.
 
-Resolution:
-
+Resolution: 2026-09-06 — Accepted; the two scaffold fixes are the intended behaviour.
 ## 2026-09-06 T02 — `wrangler.jsonc` is JSONC with trailing commas, which T01's parser rejected
 
 Expected (plan reference): `docs/plan/03-blueprint.md` B14 gives the `wrangler.jsonc` skeleton,
@@ -169,8 +165,7 @@ Proposed handling: added a string-aware `stripTrailingCommas()` next to the exis
 error still point at the right place in the original file. No behaviour change other than
 accepting the JSONC that the repository's own formatter produces.
 
-Resolution:
-
+Resolution: 2026-09-06 — Fixed in `scripts/check-config-hygiene.mjs` (string-aware trailing-comma stripper).
 ## 2026-09-06 T03 — the `chat` template's Sidebar has no Database or Extensions entries
 
 Expected (plan reference): `docs/plan/tasks/T03-framework-config.md` step 10 ("Remove
@@ -198,8 +193,7 @@ removed the one dead `Header.tsx` branch that referenced a now-deleted key rathe
 `app/i18n-data.ts` (imported by nothing) still carries the same keys and was left alone; T15
 owns the catalogs.
 
-Resolution:
-
+Resolution: 2026-09-06 — Accepted; T03 removed only the dead i18n keys. F3 note stands.
 ## 2026-09-06 T03 — the sign-in page always contains the string "Continue as local dev"
 
 Expected (plan reference): `docs/plan/tasks/T03-framework-config.md` step 11 ("sign-in page HTML
@@ -233,8 +227,7 @@ the served markup carries `id="local-dev-signin" hidden=""`; and in a real brows
 `document.body.innerText.includes("Continue as local dev") === false`. A future task that wants
 a machine check should assert on the `/_agent-native/auth/local-dev` response, not on the HTML.
 
-Resolution:
-
+Resolution: 2026-09-06 — F7 updated: verify via `GET /_agent-native/auth/local-dev`, never by grepping HTML.
 ## 2026-09-06 T03 — `createAuthPlugin({ marketing })` serves the sign-in document at `/` and hides the index route
 
 Expected (plan reference): `docs/plan/tasks/T03-framework-config.md` step 4 (keep
@@ -269,8 +262,7 @@ anonymous visitor is taken through `/jobs` to
 gate. The alternative the framework's own comment offers — `app.homePath: "/"` — reaches the
 same place and was not used because it would also move the post-sign-in landing page.
 
-Resolution:
-
+Resolution: 2026-09-06 — F7 updated: `rootAuth: false` is required in `createAuthPlugin`.
 ## 2026-09-06 T03 — a loader `redirect("/jobs")` at `/` breaks the Cloudflare static-shell build
 
 Expected (plan reference): `docs/plan/tasks/T03-framework-config.md` step 10 offers two ways to
@@ -300,8 +292,7 @@ serves `dist/index.html` for `/` as a static asset before the Worker runs, so `/
 client-side redirect there whichever form is used; a Worker smoke test must not expect an HTTP
 302 from `/`.
 
-Resolution:
-
+Resolution: 2026-09-06 — F7 and B19 updated: client-side `<Navigate>` at `/`; never expect a 302 from `/`.
 ## 2026-09-06 T03 — `validateEnvironment(env)` cannot implement B13's "APP_ENV missing → error on Workers"
 
 Expected (plan reference): `docs/plan/03-blueprint.md` B13 ("`APP_ENV` missing → treated as
@@ -327,8 +318,7 @@ sets `APP_ENV` in `vars` for the default, `staging` and `production` environment
 anyway, the smallest change is to add `NODE_ENV` to the plugin's read list and treat
 "`APP_ENV` unset and `NODE_ENV=production`" as a violation.
 
-Resolution:
-
+Resolution: 2026-09-06 — B13 rewritten: missing `APP_ENV` resolves to `local`; unknown value is a violation.
 ## 2026-09-06 T05 — B7's `ports.ts` step and B22's own file path for `ExternalAccountingSystem` disagree
 
 Expected (plan reference): `docs/plan/tasks/T05-application-core.md` step 4 ("`src/application/ports.ts` per B7 (all interfaces, `Dependencies`)") and the Deliverables list, which names only
@@ -355,8 +345,7 @@ in-memory `ExternalAccountingSystem` (deterministic `ACC-<jobId>` reference, an 
 flag keyed by idempotency key, no `failNextCall`) so `Dependencies` is complete for every
 use-case test before T27 adds the real, independently tested mock adapter.
 
-Resolution:
-
+Resolution: 2026-09-06 — Accepted: the port lives in `src/application/ports/external-accounting.ts` and `ports.ts` re-exports it.
 ## 2026-09-06 T06 — a naively generated `migrations-manifest.ts` fails `oxfmt --check`
 
 Expected (plan reference): `docs/plan/tasks/T06-schema-migrations.md` step 4 —
@@ -391,8 +380,7 @@ A production-only install has no oxfmt; the generator then leaves its own valid-
 output in place and says so. Note for T27: adding `0002_job_accounting.sql` changes this file
 from one line back to three, which is expected.
 
-Resolution:
-
+Resolution: 2026-09-06 — Accepted; the generator formats its output with the repository's oxfmt.
 ## 2026-09-06 T07 — `getDbExec()` advertises both `atomicBatch` and `transaction` until its first query
 
 Expected (plan reference): `docs/plan/02-framework-facts.md` F8 ("On D1: `atomicBatch` present,
@@ -427,8 +415,7 @@ capabilities, since a real one never does. `tests/integration/repositories.test.
 this: its first database call is a `create`, which fails without the workaround. Suggest F8
 gains a sentence about the pre-initialisation shape.
 
-Resolution:
-
+Resolution: 2026-09-06 — F8 updated; `resolveExec` probes with `SELECT 1` first.
 ## 2026-09-06 T07 — B11's audit-row guard lets a lost update write an operation row
 
 Expected (plan reference): `docs/plan/03-blueprint.md` B11's `commit` batch — statement 1 the
@@ -465,8 +452,7 @@ CONFLICT decision now reads both counts (`affected[0] !== 1 || affected[1] !== 1
 B11's `rowsAffected[0]`, because index 0 is no longer the update. Both cases are covered in
 `tests/integration/repositories.test.ts`. Suggest B11 is rewritten to this shape.
 
-Resolution:
-
+Resolution: 2026-09-06 — B11 rewritten to the verified shape (operation insert first, both row counts checked).
 ## 2026-09-06 T07 — "every exported constant contains `org_id = ?`" cannot hold for the WHERE fragments
 
 Expected (plan reference): `docs/plan/tasks/T07-infrastructure.md` step 1 — "Every constant
@@ -493,8 +479,7 @@ value can ever reach the SQL text. `SELECT_CUSTOMERS` needed the same treatment 
 `SELECT_JOBS`; step 1 only mentions the latter, but `CustomerRepository.list` takes `status`
 and `search` filters (B7).
 
-Resolution:
-
+Resolution: 2026-09-06 — B11 updated: `*_PARTS` records and a fixed allow-list for fragments.
 ## 2026-09-06 T07 — the in-memory `to` filter is inclusive, the SQL fragment T07 specifies is exclusive
 
 Expected (plan reference): `docs/plan/tasks/T07-infrastructure.md` step 1 lists the job filter
@@ -538,8 +523,7 @@ adds `send-job-to-accounting`, and refusing loudly in the port's own error type 
 stub that returns a plausible invoice reference. T27 replaces the constant with the real mock
 adapter.
 
-Resolution:
-
+Resolution: 2026-09-06 — T27 updated: replace the placeholder adapter that throws `not configured`.
 ## 2026-09-06 T08 — `actions/run.ts` is the CLI dispatcher, and deleting it broke `pnpm action`
 
 Expected (plan reference): `docs/plan/03-blueprint.md` B16 ("`hello.ts` and `run.ts` are
@@ -571,8 +555,7 @@ Proposed handling: restored `actions/run.ts` byte-for-byte from the scaffold com
 actions and no `run`. T03's `test ! -e actions/run.ts` assertion is now false; B16's sentence
 should be narrowed to `hello.ts`, and T03's acceptance line dropped.
 
-Resolution:
-
+Resolution: 2026-09-06 — F5 and B16 updated: `run.ts` stays; T03's acceptance line is superseded.
 ## 2026-09-06 T08 — `pnpm action <name> --help` runs the action instead of printing its parameters
 
 Expected (plan reference): `docs/plan/tasks/T08-queries.md` acceptance,
@@ -630,8 +613,7 @@ filter only — and recorded it. The fix is three lines in the fixture (sort by 
 then `id`, and by `name` then `id`); a task that needs order-sensitive unit tests, or T15's
 integration suite, should make it.
 
-Resolution:
-
+Resolution: 2026-09-06 — T11 updated: in-memory repositories sort like the D1 adapters.
 ## 2026-09-06 T08 — B9's "creates are never redone" cannot be evaluated from resource versions
 
 Expected (plan reference): `docs/plan/tasks/T08-queries.md` step 2 —
@@ -656,8 +638,7 @@ false positive matters to the UI, the cheapest fix is a `payload` or `classifica
 undo row that records whether its forward operation was a create, written by T10 where the
 forward operation is already loaded.
 
-Resolution:
-
+Resolution: 2026-09-06 — T10 updated: `redoable` is false when the related forward operation is a create (`versionBefore === 0`).
 ## 2026-09-06 T08 — the generated registry is `actions-registry.ts`, not `.js`
 
 Expected (plan reference): `docs/plan/02-framework-facts.md` F12,
@@ -673,8 +654,7 @@ so a later task does not go looking for a file that is never written.
 
 Proposed handling: none; F12's file name should read `.ts`.
 
-Resolution:
-
+Resolution: 2026-09-06 — F12 updated.
 ## 2026-09-06 T09 — an idempotent create's replay can only find its own operation row through a bounded query
 
 Expected (plan reference): `docs/plan/03-blueprint.md` B8's last paragraph — "before building
@@ -706,4 +686,4 @@ repeated and no wrong operation id is returned. Making it exact needs a new port
 `... AND kind = 'forward' AND action = ? ORDER BY performed_at ASC LIMIT 1`), which is a B7
 decision rather than this task's.
 
-Resolution:
+Resolution: 2026-09-06 — B7 gains `OperationRepository.findCreateOperation(orgId, resourceType, resourceId)`; T10 implements it in both repositories and removes the bounded lookup from `command.ts`.
