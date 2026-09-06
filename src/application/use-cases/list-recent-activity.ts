@@ -23,6 +23,7 @@ import type { Actor } from "../actor";
 import { requireCapability } from "../authorization";
 import { AppError } from "../errors";
 import type { Dependencies } from "../ports";
+import { isCreateOperation } from "./command";
 
 export const DEFAULT_ACTIVITY_LIMIT = 20;
 export const MAX_ACTIVITY_LIMIT = 100;
@@ -38,9 +39,9 @@ export interface ListRecentActivityInput {
 export interface ActivityEntry extends Operation {
   /** `canUndo` says yes against the resource's current version (B9). */
   undoable: boolean;
-  /** This is an undo that has not itself been reverted and still describes the
-   * resource's current version, so `redo-operation` can re-apply the forward
-   * command (B9). */
+  /** This is an undo that has not itself been reverted, still describes the
+   * resource's current version, and reversed something other than a create, so
+   * `redo-operation` can re-apply the forward command (B9). */
   redoable: boolean;
 }
 
@@ -104,9 +105,42 @@ export async function listRecentActivity(
     ),
   );
 
+  /**
+   * The forward operation each still-open undo reversed, by its own id — B9's
+   * third redo rule: a create's undo is a compensation and `redo-operation`
+   * refuses it, so it must not be offered.
+   *
+   * Only the undos that already pass the first two rules are looked up, and
+   * each distinct id once, so the common page (all forward operations) costs no
+   * extra read at all.
+   */
+  const forwardIds = new Set<string>();
+  for (const op of operations) {
+    if (
+      op.kind === "undo" &&
+      op.undoneByOperationId === null &&
+      op.relatedOperationId !== null &&
+      op.versionAfter ===
+        versions.get(resourceKey(op.resourceType, op.resourceId))
+    ) {
+      forwardIds.add(op.relatedOperationId);
+    }
+  }
+  const forwards = new Map<string, Operation | null>(
+    await Promise.all(
+      Array.from(forwardIds, async (id) => {
+        return [id, await deps.operations.getById(actor.orgId, id)] as const;
+      }),
+    ),
+  );
+
   return operations.map((op) => {
     const version =
       versions.get(resourceKey(op.resourceType, op.resourceId)) ?? null;
+    const forward =
+      op.relatedOperationId !== null
+        ? (forwards.get(op.relatedOperationId) ?? null)
+        : null;
     return {
       ...op,
       undoable: version !== null && canUndo(op, version).ok,
@@ -114,7 +148,9 @@ export async function listRecentActivity(
         version !== null &&
         op.kind === "undo" &&
         op.undoneByOperationId === null &&
-        op.versionAfter === version,
+        op.versionAfter === version &&
+        forward !== null &&
+        !isCreateOperation(forward),
     };
   });
 }
