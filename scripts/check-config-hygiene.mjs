@@ -8,7 +8,7 @@
 // Only real assignments are inspected: commented-out lines in the example files are prose.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -52,6 +52,18 @@ const ALLOWED_EXAMPLE_VALUES = {
 };
 
 const EXAMPLE_FILES = [".env.example", ".dev.vars.example"];
+
+// B15/T02: the deploy-time placeholder belongs only in the `staging` and `production` blocks
+// of wrangler.jsonc. Anywhere else it is either a placeholder someone forgot to fill in or a
+// local/CI setting that will silently do the wrong thing. Assembled from two halves so this
+// checker does not report its own source.
+const PLACEHOLDER = ["REPLACE", "ME"].join("_");
+const PLACEHOLDER_ENVIRONMENTS = ["staging", "production"];
+const PLACEHOLDER_SCANNED_FILES = [
+  "package.json",
+  ".env.example",
+  ".dev.vars.example",
+];
 
 /** @type {string[]} */
 const findings = [];
@@ -179,13 +191,47 @@ function stripJsonComments(source) {
   return result;
 }
 
+/**
+ * JSONC allows trailing commas and `oxfmt` (trailingComma: "all") writes them, so they have to
+ * come out before `JSON.parse`. Commas are replaced by spaces, never deleted, so byte offsets
+ * in a parse error still point at the right place in the original file.
+ * @param {string} source
+ */
+function stripTrailingCommas(source) {
+  const characters = [...source];
+  let inString = false;
+  for (let index = 0; index < characters.length; index += 1) {
+    const char = characters[index];
+    if (inString) {
+      if (char === "\\") index += 1;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char !== ",") continue;
+    let ahead = index + 1;
+    while (ahead < characters.length && /\s/.test(characters[ahead] ?? "")) {
+      ahead += 1;
+    }
+    if (characters[ahead] === "}" || characters[ahead] === "]") {
+      characters[index] = " ";
+    }
+  }
+  return characters.join("");
+}
+
 // wrangler.jsonc does not exist until T02; skip the check until it does.
 const wranglerSource = read("wrangler.jsonc");
 if (wranglerSource !== null) {
   /** @type {Record<string, unknown> | null} */
   let wrangler = null;
   try {
-    wrangler = JSON.parse(stripJsonComments(wranglerSource));
+    wrangler = JSON.parse(
+      stripTrailingCommas(stripJsonComments(wranglerSource)),
+    );
   } catch (error) {
     findings.push(
       `wrangler.jsonc: not parseable as JSON after stripping comments (${error})`,
@@ -215,6 +261,65 @@ if (wranglerSource !== null) {
           );
         }
       }
+    }
+
+    // Walk the parsed config so the rule is about structure, not about which line a value
+    // happens to sit on. Comments are already stripped, so prose is never a finding.
+    /** @param {unknown} node @param {string[]} trail */
+    const findPlaceholders = (node, trail) => {
+      const inEnvironmentBlock =
+        trail[0] === "env" &&
+        trail[1] !== undefined &&
+        PLACEHOLDER_ENVIRONMENTS.includes(trail[1]);
+      if (typeof node === "string") {
+        if (node.includes(PLACEHOLDER) && !inEnvironmentBlock) {
+          findings.push(
+            `wrangler.jsonc ${trail.join(".")}: ${PLACEHOLDER} is only allowed inside env.${PLACEHOLDER_ENVIRONMENTS.join(" and env.")}`,
+          );
+        }
+        return;
+      }
+      if (Array.isArray(node)) {
+        for (const [index, item] of node.entries()) {
+          findPlaceholders(item, [...trail, String(index)]);
+        }
+        return;
+      }
+      if (node && typeof node === "object") {
+        for (const [key, value] of Object.entries(node)) {
+          if (key.includes(PLACEHOLDER) && !inEnvironmentBlock) {
+            findings.push(
+              `wrangler.jsonc ${[...trail, key].join(".")}: ${PLACEHOLDER} is only allowed inside env.${PLACEHOLDER_ENVIRONMENTS.join(" and env.")}`,
+            );
+          }
+          findPlaceholders(value, [...trail, key]);
+        }
+      }
+    };
+
+    findPlaceholders(wrangler, []);
+  }
+}
+
+// Everything outside wrangler.jsonc: no environment blocks there, so any occurrence is a
+// finding — a forgotten placeholder in a script or an example file fails the same way.
+const placeholderFiles = [...PLACEHOLDER_SCANNED_FILES];
+const scriptsDir = path.join(repoRoot, "scripts");
+if (existsSync(scriptsDir)) {
+  for (const entry of readdirSync(scriptsDir).sort()) {
+    if (entry.endsWith(".mjs")) {
+      placeholderFiles.push(path.join("scripts", entry));
+    }
+  }
+}
+for (const file of placeholderFiles) {
+  const contents = read(file);
+  if (contents === null) continue;
+  for (const [index, line] of contents.split("\n").entries()) {
+    if (line.includes(PLACEHOLDER)) {
+      findings.push(
+        `${file}:${index + 1} ${PLACEHOLDER} belongs only in wrangler.jsonc env.${PLACEHOLDER_ENVIRONMENTS.join(" and env.")}`,
+      );
     }
   }
 }
