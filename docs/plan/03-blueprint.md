@@ -294,26 +294,31 @@ the existing resource.
    archived); `archive-job` → `archiveJob`; `restore-customer` → `restoreCustomer`;
    `archive-customer` → `archiveCustomer`.
 5. Build `undoOp`: kind `undo`, action `undo-operation`, classification `reversible`,
-   `relatedOperationId: op.id`, `inverse` = the forward command description needed for redo:
-   `{ type: "redo", action: op.action, args: <original semantic args> }` — store the original
-   args on the forward operation as `payload` (add `payload: Record<string, unknown> | null`
-   to `Operation`; creates store the create input; transitions store `{}`; reschedule stores
-   `{ scheduledAt }`).
+   `relatedOperationId: op.id`, `inverse: null`, `payload: {}` (implemented in T10; the earlier
+   text describing a `{ type: "redo" }` inverse was wrong: `InverseCommand` has no such member).
+   Redo reads the original action and its arguments from the forward operation's `action` and
+   `payload` through `relatedOperationId`. Forward creates store their validated input as
+   `payload`, transitions store `{}`, reschedule stores `{ scheduledAt }` (T09).
 6. `repo.commit({ resource: restored, expectedVersion: resource.version, operation: undoOp, markUndone: op.id })`.
 7. Return `{ resource, operationId: undoOp.id }`.
 
 `redoOperation(deps, actor, { operationId })` where `operationId` is an **undo** operation:
-1. Load `undoOp`; INVARIANT unless `kind === "undo"` and `undoneByOperationId === null`.
+1. Load `undoOp`; INVARIANT `Only an undo operation can be redone` unless `kind === "undo"`;
+   INVARIANT `This operation cannot be redone` if it is already undone or if the operation it
+   undid is itself a `redo-operation` row (an undo of a redo has no domain command to replay).
 2. Load the resource; CONFLICT unless `resource.version === undoOp.versionAfter`.
 3. Load the forward op `undoOp.relatedOperationId`; re-run its domain transition with the
-   stored `payload` (e.g. `completeJob(resource, now)`, `rescheduleJob(resource, payload.scheduledAt, now)`).
-   Creates are never redone (their undo is a compensation): INVARIANT.
+   stored `payload` (`completeJob(resource, now)`, `rescheduleJob(resource, payload.scheduledAt, now)`, ...).
+   Creates are never redone: INVARIANT `A create cannot be redone`.
 4. Record `redoOp`: kind `redo`, action `redo-operation`, `relatedOperationId: undoOp.id`,
-   `inverse` = same inverse as the original forward op, and mark `undoOp.undoneByOperationId = redoOp.id`.
+   `inverse` = the forward op's inverse (so a redo can be undone again), and mark
+   `undoOp.undoneByOperationId = redoOp.id`.
 
-Concurrency example that must hold (unit test `tests/unit/application/undo.test.ts`):
-user A completes job v12→v13 (op1); user B reschedules v13→v14 (op2); A calls undo(op1) →
-CONFLICT; B calls undo(op2) → ok, v15; A calls undo(op1) → still CONFLICT (version 15 ≠ 13).
+Concurrency example that must hold (unit test `tests/unit/application/undo.test.ts`; order
+adjusted in T10 because the domain refuses to reschedule a completed job): user A reschedules
+job v12→v13 (op1); user B completes v13→v14 (op2); A calls undo(op1) → CONFLICT; B calls
+undo(op2) → ok, v15; A calls undo(op1) → still CONFLICT (version 15 ≠ 13). T13 repeats it
+against the real repositories.
 
 ## B10. SQL schema (`migrations/0001_init.sql`) — normative
 

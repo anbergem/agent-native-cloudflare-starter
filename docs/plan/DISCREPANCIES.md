@@ -591,8 +591,7 @@ recorded in the pull request instead:
 
 The acceptance line should become one of those two, in this task file and in the later ones.
 
-Resolution:
-
+Resolution: 2026-09-06 — F13 updated: use `pnpm action --help` or an invalid argument value to see the signature.
 ## 2026-09-06 T08 — the in-memory repositories return rows unordered; the D1 ones order them
 
 Expected (plan reference): `docs/plan/03-blueprint.md` B7 gives one `list` signature per
