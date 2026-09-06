@@ -12,7 +12,10 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
 
 // D17: never configured anywhere, in any environment.
 const FORBIDDEN_KEYS = [
@@ -88,12 +91,16 @@ for (const file of EXAMPLE_FILES) {
   }
   for (const { key, value, line } of parseDotenv(contents)) {
     if (FORBIDDEN_KEYS.includes(key)) {
-      findings.push(`${file}:${line} forbidden key ${key} (D17: never configured)`);
+      findings.push(
+        `${file}:${line} forbidden key ${key} (D17: never configured)`,
+      );
     }
     if (value === "") continue;
     const allowed = ALLOWED_EXAMPLE_VALUES[key];
     if (allowed === undefined) {
-      findings.push(`${file}:${line} ${key} has a value; example files carry names only`);
+      findings.push(
+        `${file}:${line} ${key} has a value; example files carry names only`,
+      );
     } else if (allowed !== value) {
       findings.push(
         `${file}:${line} ${key}=${value} is not the documented local default (${allowed})`,
@@ -180,14 +187,17 @@ if (wranglerSource !== null) {
   try {
     wrangler = JSON.parse(stripJsonComments(wranglerSource));
   } catch (error) {
-    findings.push(`wrangler.jsonc: not parseable as JSON after stripping comments (${error})`);
+    findings.push(
+      `wrangler.jsonc: not parseable as JSON after stripping comments (${error})`,
+    );
   }
   if (wrangler) {
     /** @type {[string, unknown][]} */
     const varBlocks = [["wrangler.jsonc vars", wrangler.vars]];
-    const environments = /** @type {Record<string, { vars?: unknown }> | undefined} */ (
-      wrangler.env
-    );
+    const environments =
+      /** @type {Record<string, { vars?: unknown }> | undefined} */ (
+        wrangler.env
+      );
     for (const [name, environment] of Object.entries(environments ?? {})) {
       varBlocks.push([`wrangler.jsonc env.${name}.vars`, environment?.vars]);
     }
@@ -195,10 +205,14 @@ if (wranglerSource !== null) {
       if (!block || typeof block !== "object") continue;
       for (const key of Object.keys(block)) {
         if (FORBIDDEN_KEYS.includes(key)) {
-          findings.push(`${label}: forbidden key ${key} (D17: never configured)`);
+          findings.push(
+            `${label}: forbidden key ${key} (D17: never configured)`,
+          );
         }
         if (SECRET_KEYS.includes(key)) {
-          findings.push(`${label}: secret ${key} must be a Worker secret, not a var`);
+          findings.push(
+            `${label}: secret ${key} must be a Worker secret, not a var`,
+          );
         }
       }
     }

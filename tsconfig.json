@@ -4,20 +4,11 @@
     "ignoreDeprecations": "6.0",
     "strict": true,
     "noUncheckedIndexedAccess": true,
-    "rootDirs": [
-      ".",
-      "./.react-router/types"
-    ],
+    "rootDirs": [".", "./.react-router/types"],
     "paths": {
-      "*": [
-        "./*"
-      ],
-      "@/*": [
-        "./app/*"
-      ],
-      "@shared/*": [
-        "./shared/*"
-      ]
+      "*": ["./*"],
+      "@/*": ["./app/*"],
+      "@shared/*": ["./shared/*"]
     }
   },
   "include": [

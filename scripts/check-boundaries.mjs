@@ -23,7 +23,10 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
 
 const WALK_ROOTS = ["src", "actions", "app"];
 const SKIP_DIRS = new Set([
@@ -138,9 +141,8 @@ function collectFiles(dir) {
  * @param {string} source
  */
 function stripComments(source) {
-  const withoutBlockComments = source.replace(
-    /\/\*[\s\S]*?\*\//g,
-    (match) => match.replace(/[^\n]/g, " "),
+  const withoutBlockComments = source.replace(/\/\*[\s\S]*?\*\//g, (match) =>
+    match.replace(/[^\n]/g, " "),
   );
   return withoutBlockComments
     .split("\n")
@@ -172,10 +174,13 @@ function readSpecifiers(file) {
   const lines = source.split("\n");
   for (const [index, line] of lines.entries()) {
     const lineNumber = index + 1;
-    const staticMatch = STATIC_IMPORT.exec(line) ?? SIDE_EFFECT_IMPORT.exec(line);
-    if (staticMatch?.[1]) specifiers.push({ specifier: staticMatch[1], line: lineNumber });
+    const staticMatch =
+      STATIC_IMPORT.exec(line) ?? SIDE_EFFECT_IMPORT.exec(line);
+    if (staticMatch?.[1])
+      specifiers.push({ specifier: staticMatch[1], line: lineNumber });
     for (const dynamic of line.matchAll(DYNAMIC_IMPORT)) {
-      if (dynamic[1]) specifiers.push({ specifier: dynamic[1], line: lineNumber });
+      if (dynamic[1])
+        specifiers.push({ specifier: dynamic[1], line: lineNumber });
     }
   }
   return specifiers;
@@ -191,8 +196,14 @@ function resolveInternal(fromFile, specifier) {
   /** @type {string | null} */
   let candidate = null;
   if (specifier.startsWith(".")) {
-    const absolute = path.resolve(path.dirname(path.join(repoRoot, fromFile)), specifier);
-    const relative = path.relative(repoRoot, absolute).split(path.sep).join("/");
+    const absolute = path.resolve(
+      path.dirname(path.join(repoRoot, fromFile)),
+      specifier,
+    );
+    const relative = path
+      .relative(repoRoot, absolute)
+      .split(path.sep)
+      .join("/");
     candidate = relative.startsWith("..") ? null : relative;
   } else if (specifier.startsWith("@/")) {
     candidate = `app/${specifier.slice(2)}`;
@@ -205,7 +216,9 @@ function resolveInternal(fromFile, specifier) {
   const normalized = path.posix.normalize(candidate);
   if (normalized.startsWith("..")) return null;
   // Drop query suffixes (`?url`) and extensions so prefixes compare cleanly.
-  return normalized.replace(/\?.*$/, "").replace(/\.(tsx?|jsx?|mjs|cjs|css|json)$/, "");
+  return normalized
+    .replace(/\?.*$/, "")
+    .replace(/\.(tsx?|jsx?|mjs|cjs|css|json)$/, "");
 }
 
 /** @param {string} target @param {string} prefix */
@@ -228,7 +241,8 @@ for (const root of WALK_ROOTS) {
     for (const { specifier, line } of readSpecifiers(file)) {
       const internal = resolveInternal(file, specifier);
       if (internal !== null) {
-        if (layer.internalAllow.some((prefix) => isUnder(internal, prefix))) continue;
+        if (layer.internalAllow.some((prefix) => isUnder(internal, prefix)))
+          continue;
         const targetLayer = layerOf(internal);
         const target = targetLayer ? targetLayer.dir : internal.split("/")[0];
         violations.push(

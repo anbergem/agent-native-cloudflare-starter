@@ -6,7 +6,6 @@
   "description": "Workspace app for Example Jobs.",
   "license": "MIT",
   "type": "module",
-  "packageManager": "pnpm@11.23.0",
   "scripts": {
     "dev": "agent-native dev",
     "build": "agent-native build",
@@ -109,6 +108,7 @@
   "engines": {
     "node": ">=22.22.0"
   },
+  "packageManager": "pnpm@11.23.0",
   "agent-native": {
     "scaffold": {
       "template": "chat",
