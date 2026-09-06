@@ -11,6 +11,13 @@
  * `state` is exposed directly so tests (and `tests/fixtures/scenario.ts`)
  * can seed or inspect it without going through the repository interfaces,
  * which run the same preconditions a real adapter would.
+ *
+ * Every `list` returns rows in the order the matching D1 statement in
+ * `src/infrastructure/d1/sql.ts` does — customers by `name, id`, jobs by
+ * `scheduled_at, id`, operations by `performed_at DESC, id DESC`. A `Map`
+ * iterates in insertion order, which is not an order any database promises,
+ * so without this a unit test and the integration test for the same use case
+ * could disagree (DISCREPANCIES, 2026-09-06 T08).
  */
 
 import type { Role } from "../../src/application/authorization";
@@ -60,6 +67,25 @@ export interface InMemoryDependencies extends Dependencies {
 
 function idempotencyMapKey(orgId: string, action: string, key: string): string {
   return `${orgId} ${action} ${key}`;
+}
+
+/**
+ * `ORDER BY <first> ASC, <second> ASC` for two string columns.
+ *
+ * Plain `<`/`>` rather than `localeCompare`, because SQLite's default
+ * collation for a TEXT column is a byte comparison, and a locale-aware
+ * comparison would order `["a", "B"]` differently from the database this
+ * fixture stands in for.
+ */
+function byTextThenId(
+  first: string,
+  second: string,
+  firstId: string,
+  secondId: string,
+): number {
+  if (first !== second) return first < second ? -1 : 1;
+  if (firstId === secondId) return 0;
+  return firstId < secondId ? -1 : 1;
 }
 
 function createClock(now: string): Clock {
@@ -117,14 +143,18 @@ function createCustomerRepository(state: InMemoryState): CustomerRepository {
       return found && found.orgId === orgId ? found : null;
     },
     list: async (orgId, filter) => {
-      return Array.from(state.customers.values())
-        .filter((c) => c.orgId === orgId)
-        .filter((c) => (filter.status ? c.status === filter.status : true))
-        .filter((c) =>
-          filter.search
-            ? c.name.toLowerCase().includes(filter.search.toLowerCase())
-            : true,
-        );
+      return (
+        Array.from(state.customers.values())
+          .filter((c) => c.orgId === orgId)
+          .filter((c) => (filter.status ? c.status === filter.status : true))
+          .filter((c) =>
+            filter.search
+              ? c.name.toLowerCase().includes(filter.search.toLowerCase())
+              : true,
+          )
+          // `SELECT_CUSTOMERS_PARTS.order`: ORDER BY name ASC, id ASC.
+          .sort((a, b) => byTextThenId(a.name, b.name, a.id, b.id))
+      );
     },
     create: async ({ customer, operation, idempotency }) => {
       state.customers.set(customer.id, customer);
@@ -177,6 +207,10 @@ function createJobRepository(state: InMemoryState): JobRepository {
           // `src/infrastructure/d1/sql.ts`: `from` inclusive, `to` exclusive.
           .filter((j) => (filter.from ? j.scheduledAt >= filter.from : true))
           .filter((j) => (filter.to ? j.scheduledAt < filter.to : true))
+          // `SELECT_JOBS_PARTS.order`: ORDER BY scheduled_at ASC, id ASC.
+          .sort((a, b) =>
+            byTextThenId(a.scheduledAt, b.scheduledAt, a.id, b.id),
+          )
       );
     },
     create: async ({ job, operation, idempotency }) => {
@@ -217,10 +251,13 @@ function createJobRepository(state: InMemoryState): JobRepository {
 }
 
 /** Newest first, matching what "recent activity" means for both
- * `listRecent` and `listForResource`. */
+ * `listRecent` and `listForResource` — and matching
+ * `SELECT_RECENT_OPERATIONS`/`SELECT_OPERATIONS_FOR_RESOURCE`, which are
+ * `ORDER BY performed_at DESC, id DESC`. The `id` tiebreak matters here: the
+ * seeded scenario writes several operations at the same instant, so without
+ * it the page boundary of a `limit`ed list would be insertion order. */
 function byMostRecentFirst(a: Operation, b: Operation): number {
-  if (a.performedAt === b.performedAt) return 0;
-  return a.performedAt < b.performedAt ? 1 : -1;
+  return -byTextThenId(a.performedAt, b.performedAt, a.id, b.id);
 }
 
 function createOperationRepository(state: InMemoryState): OperationRepository {

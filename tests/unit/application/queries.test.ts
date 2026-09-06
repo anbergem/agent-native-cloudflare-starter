@@ -224,9 +224,21 @@ describe("listJobs", () => {
     expect(ids(jobs)).toEqual([JOB_ARCHIVED_ID, JOB_COMPLETED_ID]);
   });
 
-  // No ordering assertion: the D1 repository orders by `scheduled_at ASC, id
-  // ASC` and the in-memory one does not order at all (see DISCREPANCIES,
-  // 2026-09-06 T08). `ids()` sorts, so every assertion here is about the set.
+  // The assertions above are about the set, not the order: `ids()` sorts.
+  // Both repositories now order by `scheduled_at ASC, id ASC` (T11 changed the
+  // in-memory one; see DISCREPANCIES, 2026-09-06 T08), and the case below
+  // pins that.
+
+  it("returns jobs in scheduled order, like the D1 repository", async () => {
+    const deps = seeded();
+    const jobs = await listJobs(deps, acmeOwner, { includeArchived: true });
+    expect(jobs.map((job) => job.id)).toEqual([
+      JOB_COMPLETED_ID,
+      JOB_ARCHIVED_ID,
+      JOB_IN_PROGRESS_ID,
+      JOB_SCHEDULED_ID,
+    ]);
+  });
 
   it("shows the outsider only the other organization's jobs", async () => {
     const deps = seeded();
