@@ -52,21 +52,21 @@ no "ignored build scripts" warning and `workerd@1.20260903.1` plus
 
 Resolution:
 
-## 2026-09-06 T00 — `pnpm agent-native:doctor` runs pnpm's built-in doctor, not `agent-native doctor`
+## 2026-09-06 T00 — `pnpm doctor` runs pnpm's built-in doctor, not `agent-native doctor`
 
-Expected (plan reference): `docs/plan/tasks/T00-scaffold.md` "Acceptance" lists `pnpm agent-native:doctor`,
+Expected (plan reference): `docs/plan/tasks/T00-scaffold.md` "Acceptance" lists `pnpm doctor`,
 and `docs/plan/02-framework-facts.md` F3 records the scaffold script `doctor` =
 `agent-native doctor`, so the acceptance command was clearly meant to run the framework doctor.
 
 Observed: pnpm 11.23.0 has a built-in `doctor` command, which shadows the `doctor` script in
-`package.json`. `pnpm agent-native:doctor` prints pnpm environment checks ("Versions: pnpm 11.23.0,
+`package.json`. `pnpm doctor` prints pnpm environment checks ("Versions: pnpm 11.23.0,
 Node.js 26.6.0 … All checks passed") and exits 0; it never invokes `agent-native`. The
 framework doctor is reached with `pnpm run doctor` (or the scaffold's `pnpm agent-native:doctor`
 alias), which prints "agent-native doctor: … Clean — no findings." and also exits 0.
 
 Impact: none for T00 — both commands exit 0 and both outputs are recorded in the pull request.
 Later tasks that rely on the framework guards (`no-drizzle-push`, `no-empty-migrations`,
-`no-unscoped-queries`, …) must use `pnpm run doctor`, not `pnpm agent-native:doctor`.
+`no-unscoped-queries`, …) must use `pnpm run doctor` or `pnpm agent-native:doctor`, not bare `pnpm doctor`.
 
 Proposed handling: ran both and recorded both outputs. Suggest T01, which owns the script
 table, standardises on an unambiguous script name for the framework doctor and that later task
