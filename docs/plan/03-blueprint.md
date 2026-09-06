@@ -412,22 +412,35 @@ export async function runAtomic(exec: DbExecLike, statements: Statement[]): Prom
 // if exec.atomicBatch: use it; else if exec.transaction: run sequentially inside it; else throw AppError INTERNAL "No atomic write support"
 ```
 
-- `commit` implementation for jobs (customers analogous):
+- `commit` implementation for jobs (customers analogous). Verified shape from T07; the earlier
+  shape (update first, operation insert guarded on the *new* version) let a lost update write an
+  operation row because two writers at version N both target N+1:
 
 ```sql
--- 1
-UPDATE jobs SET status = ?, scheduled_at = ?, assigned_to = ?, completed_at = ?, archived_at = ?, accounting_reference = ?, accounting_sent_at = ?, version = ?, updated_at = ?
-WHERE org_id = ? AND id = ? AND version = ?;   -- accounting columns exist from migration 0002 (T27); until then omit them
--- 2
+-- 1: the operation row, guarded on the version the caller saw
 INSERT INTO operations (id, org_id, kind, action, resource_type, resource_id, classification, version_before, version_after, payload, inverse, related_operation_id, undone_by_operation_id, performed_by, performed_via, performed_at)
 SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?
-WHERE EXISTS (SELECT 1 FROM jobs WHERE org_id = ? AND id = ? AND version = ?);   -- new version
--- 3 (only when markUndone)
-UPDATE operations SET undone_by_operation_id = ? WHERE org_id = ? AND id = ? AND undone_by_operation_id IS NULL;
+WHERE EXISTS (SELECT 1 FROM jobs WHERE org_id = ? AND id = ? AND version = ?);   -- expectedVersion
+-- 2: the resource, guarded on the same version
+UPDATE jobs SET status = ?, scheduled_at = ?, assigned_to = ?, completed_at = ?, archived_at = ?, accounting_reference = ?, accounting_sent_at = ?, version = ?, updated_at = ?
+WHERE org_id = ? AND id = ? AND version = ?;                                      -- expectedVersion; accounting columns exist from migration 0002 (T27)
+-- 3 (only when markUndone): guarded on the undoing operation having been written
+UPDATE operations SET undone_by_operation_id = ?
+WHERE org_id = ? AND id = ? AND undone_by_operation_id IS NULL
+  AND EXISTS (SELECT 1 FROM operations WHERE org_id = ? AND id = ?);              -- the new operation id
 ```
 
-  After `runAtomic`, if `rowsAffected[0] !== 1` throw CONFLICT. Statement 2's guard makes the
-  batch a no-op when statement 1 did not apply.
+  After `runAtomic`, throw CONFLICT unless `rowsAffected[0] === 1` **and** `rowsAffected[1] === 1`
+  (and `rowsAffected[2] === 1` when step 3 is present). Inside one atomic batch a stale writer
+  affects zero rows in every statement, so nothing is written.
+- Executor detection (T07): the framework's lazy executor proxy advertises **both**
+  `atomicBatch` and `transaction` until its first query; `resolveExec` in `atomic.ts` issues one
+  `SELECT 1` when both are advertised and re-reads the shape before choosing. Keep this.
+- Statement export shape (T07): list statements with optional filters are exported as one
+  record each (`SELECT_JOBS_PARTS`, `SELECT_CUSTOMERS_PARTS`) holding the base statement and the
+  fixed fragments; the scoping test asserts `org_id = ?` on every whole statement and a fixed
+  allow-list on fragments. The `to` filter is **exclusive** (`scheduled_at < ?`); the in-memory
+  fixture must match (T08 fixes it).
 - `create` for jobs: `INSERT INTO jobs (...) SELECT ?, ?, ... WHERE EXISTS (SELECT 1 FROM
   customers WHERE org_id = ? AND id = ? AND status = 'active')`, then the operation insert
   guarded by `EXISTS (SELECT 1 FROM jobs WHERE org_id = ? AND id = ?)`, then optional

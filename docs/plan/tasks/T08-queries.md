@@ -14,13 +14,16 @@ Depends on: T07. Read: F5, F11; B3, B8 (query rows), B16.
    `list-recent-activity.ts` following the B16 template with `http: { method: "GET" }`,
    `readOnly: true`, `mcpTool: true`, Zod schemas mirroring the inputs (`from`/`to` as
    `z.string().datetime()`), descriptions that say when to use them.
-4. Unit tests `tests/unit/application/queries.test.ts` with the in-memory dependencies and
+4. Reconcile the `to` filter: the D1 fragment (T07) is exclusive (`scheduled_at < ?`); change
+   `tests/fixtures/in-memory.ts` to the same exclusive comparison and state it in the `listJobs`
+   input doc comment (`from` inclusive, `to` exclusive).
+5. Unit tests `tests/unit/application/queries.test.ts` with the in-memory dependencies and
    `seedInMemory`: each query returns the seeded rows for `org_acme`; the same queries as the
    outsider (`org_other`) return only `org_other` rows or NOT_FOUND for ids from `org_acme`;
    filters work; `list-recent-activity` marks the `complete-job` operation on `job_completed` as
    undoable, the create operations of customers without later operations as undoable
    (compensation), and the archived job's create operation as not undoable (newer op exists).
-5. Verify on the Node dev server: `pnpm db:reset && pnpm dev` then, after inserting an
+6. Verify on the Node dev server: `pnpm db:reset && pnpm dev` then, after inserting an
    `org_members` row with SQL for a user you register via curl (the seed script arrives in
    T11), `GET /_agent-native/actions/list-jobs` returns `[]` with HTTP 200, and as a registered
    user without membership returns HTTP 403 with `errorCode: "AUTHORIZATION"`.
@@ -36,4 +39,4 @@ five action files, `tests/unit/application/queries.test.ts`.
 pnpm check
 pnpm action list-jobs --help     # prints the action's parameters
 ```
-plus the step 5 transcript.
+plus the step 6 transcript.

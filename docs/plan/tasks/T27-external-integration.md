@@ -16,9 +16,10 @@ B10 (migration 0002), B11 (`UPDATE_JOB_VERSIONED`), B22; D26; F5 (`needsApproval
    regenerate the manifest (`pnpm db:migrate` runs the generator), update every jobs SQL
    constant and mapper in `src/infrastructure/d1` for the two columns, and the in-memory
    fixture and scenario builders (`null` for every seeded job).
-3. Port and mock per B22: `src/application/ports/external-accounting.ts`,
-   `src/infrastructure/mock/mock-accounting.ts`; wire `accounting` into `Dependencies`, the
-   in-memory fixture (fresh mock per test) and the container.
+3. Port and mock per B22: the port already exists at `src/application/ports/external-accounting.ts`
+   (T05); add `src/infrastructure/mock/mock-accounting.ts` and replace the container's placeholder
+   adapter (T07 wired one that throws `ExternalSystemError("The accounting system is not configured")`)
+   and the trivial in-memory fixture mock with it (fresh mock per test).
 4. Authorization: add `jobs:export` to admin and owner (B6) and extend the matrix test.
 5. Use case and action per B22. Unit tests `tests/unit/application/send-job-to-accounting.test.ts`:
    success (reference `ACC-<id>`, version + 1, operation `irreversible` with `inverse: null`,

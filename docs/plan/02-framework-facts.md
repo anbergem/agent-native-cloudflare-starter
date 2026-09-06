@@ -167,7 +167,10 @@ Semantics that matter:
 - `getDbExec()` returns `{ execute({ sql, args }) → { rows, rowsAffected }, transaction?(fn),
   atomicBatch?(statements) }`. On D1: `atomicBatch` present, `transaction` absent. On the local
   file (better-sqlite3) and libsql: `transaction` present (BEGIN IMMEDIATE), `atomicBatch`
-  absent. Placeholders are `?`.
+  absent. Placeholders are `?`. Caveat (T07): the returned object is a lazy proxy that advertises
+  both methods until the first query has run; calling `atomicBatch` on the local runtime throws
+  "This database does not support atomic batches". Run one `SELECT 1` first, then inspect.
+  Rows are plain objects on every runtime.
 - Dialect detection: `DATABASE_URL` wins; unset plus `globalThis.__cf_env.DB` present → `d1`;
   otherwise local SQLite at `file:./data/app.db`.
 - `createGetDb(schema)` from `server/db/index.ts` gives a typed Drizzle client; we keep it for
