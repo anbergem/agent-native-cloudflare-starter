@@ -356,3 +356,39 @@ flag keyed by idempotency key, no `failNextCall`) so `Dependencies` is complete 
 use-case test before T27 adds the real, independently tested mock adapter.
 
 Resolution:
+
+## 2026-09-06 T06 — a naively generated `migrations-manifest.ts` fails `oxfmt --check`
+
+Expected (plan reference): `docs/plan/tasks/T06-schema-migrations.md` step 4 —
+`scripts/gen-migrations-manifest.mjs` "writes `src/infrastructure/migrations-manifest.ts`
+containing `export const MIGRATION_FILES = [ ...sorted names ] as const;` … Commit the
+generated file" — together with the standing rule that `pnpm check` (which runs
+`oxlint . && oxfmt --check .`) passes.
+
+Observed: the two requirements collide. oxfmt 0.66.0 has an opinion about array layout: with
+one migration it collapses the emitted
+
+```ts
+export const MIGRATION_FILES = [
+  "0001_init.sql",
+] as const;
+```
+
+onto one line, so immediately after `node scripts/gen-migrations-manifest.mjs` (or after any
+`pnpm db:migrate` / `pnpm build:worker`, both of which run the generator) `pnpm lint` reports
+`src/infrastructure/migrations-manifest.ts … Format issues found in above 1 files`. Emitting
+the single-line form instead only moves the problem: with the second migration (T27's
+`0002_job_accounting.sql`) the line is 84 characters, over the repository's
+`printWidth: 80`, and oxfmt expands it again.
+
+Impact: T06 step 4, and `pnpm check` after any command that regenerates the manifest.
+
+Proposed handling: the generator writes the file and then runs the repository's own formatter
+on it (`node_modules/.bin/oxfmt --write <file>`) when that binary is present, so the committed
+file matches `.oxfmtrc.json` for any number of migrations rather than duplicating oxfmt's
+line-breaking rule in the generator. Verified idempotent at one and at three migration files.
+A production-only install has no oxfmt; the generator then leaves its own valid-TypeScript
+output in place and says so. Note for T27: adding `0002_job_accounting.sql` changes this file
+from one line back to three, which is expected.
+
+Resolution:

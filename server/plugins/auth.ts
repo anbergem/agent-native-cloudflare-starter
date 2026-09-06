@@ -12,6 +12,9 @@ import { createAuthPlugin } from "@agent-native/core/server";
 // has to be off; the auth guard still sends anonymous visitors to sign in.
 export default createAuthPlugin({
   rootAuth: false,
+  // The readiness probe (B19) must answer before anyone can sign in — and a load balancer
+  // or a smoke test has no session. It exposes migration file names and nothing else.
+  publicPaths: ["/api/ready"],
   marketing: {
     appName: "Example Jobs",
     tagline: "Sign in to continue.",
