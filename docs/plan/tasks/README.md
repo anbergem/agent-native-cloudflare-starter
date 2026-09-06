@@ -7,7 +7,7 @@ Update this table in the same pull request that delivers the task. Pick the lowe
 | ID | Title | Depends on | Status |
 | --- | --- | --- | --- |
 | T00 | Scaffold and repository baseline | — | done (PR #2) |
-| T01 | Toolchain, scripts, hygiene checks | T00 | todo |
+| T01 | Toolchain, scripts, hygiene checks | T00 | in-progress (claude) |
 | T02 | Worker build pipeline and Wrangler configuration | T01 | todo |
 | T03 | Framework configuration and template cleanup | T02 | todo |
 | T04 | Domain layer | T01 | todo |
