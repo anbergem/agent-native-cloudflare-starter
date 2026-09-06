@@ -43,6 +43,38 @@ export function logAction(entry: ActionLogEntry): void {
   );
 }
 
+export interface UnexpectedErrorLogEntry {
+  /** Action name the failure happened under. */
+  action: string;
+  orgId?: string | null;
+  /** The value that was thrown, whatever it is. */
+  error: unknown;
+}
+
+/**
+ * The stack of a failure nobody anticipated (B16). This is the one log line
+ * that may carry an original message, because it is also the only record of
+ * what broke: `toAppError` replaces it with the constant `"Unexpected error"`
+ * before the caller ever sees it. Never called for an `AppError` or a
+ * `DomainError`, both of which are already explained by `logAction`'s
+ * `errorCode`.
+ */
+export function logUnexpectedError(entry: UnexpectedErrorLogEntry): void {
+  const error = entry.error;
+  console.error(
+    JSON.stringify({
+      level: "error",
+      event: "unexpected-error",
+      action: entry.action,
+      orgId: entry.orgId ?? null,
+      message: error instanceof Error ? error.message : String(error),
+      ...(error instanceof Error && error.stack !== undefined
+        ? { stack: error.stack }
+        : {}),
+    }),
+  );
+}
+
 export interface WarningLogEntry {
   /** Short, stable name of what went wrong, e.g. `invalid-json-column`. */
   event: string;
