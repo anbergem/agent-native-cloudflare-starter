@@ -7,16 +7,22 @@ Depends on: T12, T15. Read: F6, F9; B12, B18, B19.
 ## Steps
 
 1. `scripts/e2e-server.mjs`: `rm -rf .wrangler/state`; `wrangler d1 migrations apply
-   example-jobs-local --local`; write scenario SQL to a temp file and apply with `wrangler d1
-   execute example-jobs-local --local --file`; then `exec` `wrangler dev --port 8787 --ip
-   127.0.0.1 --local` (inherit stdio). Requires `dist/`; exit 1 with a message if missing.
+   example-jobs-local --local`; spawn `wrangler dev --port 8787 --ip 127.0.0.1 --local`
+   (inherit stdio, keep the child); poll `http://127.0.0.1:8787/_agent-native/ping`; request
+   `/_agent-native/health` once (this makes the framework create `organizations`,
+   `org_members` and its other tables — they do not exist before the first request, T11);
+   then apply the scenario SQL with `node scripts/seed.mjs --target d1-local --skip-users`
+   (which runs `wrangler d1 execute example-jobs-local --local --file` while the server runs,
+   verified in T11); keep the process alive until killed and forward SIGTERM/SIGINT to the
+   child. Requires `dist/`; exit 1 with a message if missing.
 2. `playwright.config.ts`: `testDir: "tests/e2e"`, `workers: 1`, `fullyParallel: false`,
    `retries: process.env.CI ? 1 : 0`, `reporter: [["list"], ["html", { open: "never" }]]`,
    `use: { baseURL: "http://127.0.0.1:8787", trace: "on-first-retry" }`,
    `webServer: { command: "node scripts/e2e-server.mjs", url: "http://127.0.0.1:8787/_agent-native/ping", timeout: 180_000, reuseExistingServer: false }`,
    `globalSetup: "tests/e2e/global-setup.ts"`, one `chromium` project.
-3. `tests/e2e/global-setup.ts`: run `scripts/seed.mjs --target d1-local --skip-users`? No: SQL was
-   applied by the server script; here only register the five users over HTTP and log each in,
+3. `tests/e2e/global-setup.ts`: the scenario SQL was applied by the server script; here only
+   register the five users over HTTP (`node scripts/seed.mjs` cannot be reused for that alone,
+   so call the register/login endpoints directly, treating HTTP 409 as "exists") and log each in,
    saving storage state to `tests/e2e/.auth/<name>.json`; then run the local-mode smoke
    (`scripts/worker-smoke.mjs` as a child process with the owner QA credentials) and fail setup
    if it fails.

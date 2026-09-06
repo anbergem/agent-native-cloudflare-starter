@@ -12,8 +12,11 @@ Depends on: T10, T11. Read: F9, F12; B19.
    any failure, overall timeout 120 s. Readiness: retry `ping` up to 60 times with 2 s sleeps
    before the first check. Agent-chat check: read the first 2 KB of the SSE body.
 2. `package.json`: `smoke` per B15.
-3. Verify locally: `pnpm build:worker && pnpm db:reset && pnpm dev:worker:serve` (background)
-   `&& pnpm db:seed:worker && pnpm smoke -- --qa-email owner@example.invalid --qa-password
+3. Verify locally: `pnpm build:worker && pnpm db:reset && pnpm dev:worker:serve` (background),
+   poll `ping`, then `pnpm db:seed:worker` (the seed script's SQL step needs the framework
+   tables, which exist only after the first request; `db:seed:worker` registers users over
+   HTTP first only if you pass nothing — verify the order in `scripts/seed.mjs` and, if the SQL
+   step runs first, request `/_agent-native/health` once before seeding) `&& pnpm smoke -- --qa-email owner@example.invalid --qa-password
    Example-Seed-Password-2026 --expect-org-id org_acme` passes every local-mode check.
 
 ## Deliverables

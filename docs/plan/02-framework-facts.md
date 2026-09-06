@@ -117,7 +117,8 @@ Semantics that matter:
   `POST /_agent-native/auth/logout`; `GET /_agent-native/auth/session`;
   `GET /_agent-native/org/me` → `{ email, orgId, orgName, role, orgs: [...], ... }`.
   Password minimum length exists (register returns 400 below it); use 16+ character seed
-  passwords.
+  passwords. Registering an existing email returns HTTP 409. GET actions reject POST with
+  HTTP 405 `Method not allowed. Use GET.`
 - Unauthenticated action call returns HTTP 401.
 - Organization tables (framework-owned, SQLite dialect):
   `organizations(id TEXT PK, name TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL, allowed_domain TEXT, a2a_secret TEXT, workspace_url TEXT, required_auth_provider TEXT, ...)`
@@ -179,8 +180,13 @@ Semantics that matter:
   the framework but repositories use `getDbExec()` (D01/D07).
 - D1: `PRAGMA foreign_keys` is on; no interactive transactions; `batch()` is atomic.
 - Framework tables are created by the framework at first database touch through its own
-  migration runners (`_better_auth_migrations`, `_org_migrations`, ...). On Workers this runs
-  on the request path of the first request after a deploy; it takes a few seconds once.
+  migration runners (`_better_auth_migrations`, `_org_migrations`, ...). The Node dev server
+  (`pnpm dev`) does this at boot; `wrangler dev` and the deployed Worker do it during the first
+  request that touches the database (`GET /_agent-native/health` is enough); it takes a few
+  seconds once. Consequence (T11): scenario SQL that inserts into `organizations`/`org_members`
+  can only run after the app has touched the database; a freshly migrated D1 has no such tables.
+  Hermetic tests that never start a server must create those two tables themselves with the
+  framework DDL from F6.
 
 ## F9. Cloudflare build and runtime
 
