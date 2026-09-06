@@ -446,10 +446,14 @@ Constants (exact strings):
 | Users (password: `SEED_PASSWORD`, default `Example-Seed-Password-2026`) | `owner@example.invalid` (owner, org_acme); `admin@example.invalid` (admin, org_acme); `member1@example.invalid` (member, org_acme); `member2@example.invalid` (member, org_acme); `outsider@example.invalid` (owner, org_other) |
 | Customers (org_acme) | `cus_a` "Example Customer A" active; `cus_b` "Example Customer B" active; `cus_archived` "Archived Customer" archived |
 | Customer (org_other) | `cus_other` "Other Company Customer" active |
-| Jobs (org_acme, customer cus_a unless noted) | `job_scheduled` "Scheduled job" scheduled 2026-10-01T08:00:00.000Z assigned member1; `job_in_progress` "In-progress job" in_progress; `job_completed` "Completed job" completed (cus_b); `job_archived` "Archived job" archived (cus_b) |
-| Job (org_other) | `job_other` "Other Company job" scheduled, customer cus_other |
-| Operations | one `forward` create op per customer/job with version_before 0, version_after 1, performed_by owner@example.invalid, performed_via `seed`, performed_at 2026-09-01T09:00:00.000Z; plus for `job_in_progress` a `start-job` op (1→2) and for `job_completed` a `complete-job` op (1→2) |
-| Versions | customers 1; job_scheduled 1; job_in_progress 2; job_completed 2; job_archived 2 (create + archive op) |
+| Jobs (org_acme, customer cus_a unless noted) | `job_scheduled` "Scheduled job" scheduled at 2026-10-01T08:00:00.000Z assigned member1; `job_in_progress` "In-progress job" in_progress, scheduled at 2026-09-10T09:00:00.000Z; `job_completed` "Completed job" completed (cus_b), scheduled at 2026-09-05T09:00:00.000Z; `job_archived` "Archived job" archived (cus_b), scheduled at 2026-09-08T09:00:00.000Z |
+| Job (org_other) | `job_other` "Other Company job" scheduled at 2026-10-02T08:00:00.000Z, customer cus_other |
+| Operations | one `forward` create op per customer/job (version 0→1) performed at 2026-09-01T09:00:00.000Z; `start-job` on `job_in_progress` (1→2) at 2026-09-02T09:00:00.000Z; `complete-job` on `job_completed` (1→2) at 2026-09-02T09:00:00.000Z; `archive-job` on `job_archived` (1→2) at 2026-09-03T09:00:00.000Z. `performed_by` is `owner@example.invalid` for every seeded operation (also `org_other`'s, by the original wording); `performed_via` is `seed`; `created_by` on resources is the organization's owner (`outsider@example.invalid` for `org_other`) |
+| Versions | customers 1; job_scheduled 1; job_in_progress 2; job_completed 2; job_archived 2 |
+| Accounting | every seeded job has `accounting_reference` and `accounting_sent_at` NULL |
+
+These values are implemented in `tests/fixtures/scenario.ts` (T05); the file is the executable
+form of this table and the two must stay identical.
 
 `buildScenarioSql(): string[]` returns INSERT statements (no DELETE) for organizations,
 org_members, customers, jobs, operations. `buildScenarioResetSql(): string[]` returns DELETE
