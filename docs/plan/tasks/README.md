@@ -12,7 +12,7 @@ Update this table in the same pull request that delivers the task. Pick the lowe
 | T03 | Framework configuration and template cleanup | T02 | done (PR #5) |
 | T04 | Domain layer | T01 | done (PR #6) |
 | T05 | Application core: errors, authorization, actor, ports, in-memory doubles | T04 | done (PR #7) |
-| T06 | Schema, migrations, local migration runner, readiness route | T03, T05 | todo |
+| T06 | Schema, migrations, local migration runner, readiness route | T03, T05 | done (PR #8) |
 | T07 | Infrastructure: repositories, atomic writes, container | T06 | todo |
 | T08 | Query use cases and actions | T07 | todo |
 | T09 | Command use cases and actions | T08 | todo |
