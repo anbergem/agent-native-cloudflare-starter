@@ -33,6 +33,11 @@ Depends on: T01. Read: F1, F9, F10; B13, B14, B15; D02, D03, D04.
    `dist/_worker.js/`, sum, print `worker bundle gzip total: <MiB>`; exit 1 above 8 MiB.
 5. `package.json` scripts: `build:worker`, `dev:worker`, `dev:worker:serve`,
    `db:migrate:worker`, `deploy:staging`, `deploy:production` per B15.
+   Extend `scripts/check-config-hygiene.mjs` (T01 did not implement this B15 rule): the literal
+   `REPLACE_ME` may appear in `wrangler.jsonc` only inside the `env.staging` and
+   `env.production` objects; anywhere else (top-level `vars`, `d1_databases`, scripts,
+   `.env.example`, `.dev.vars.example`) is a finding. Every new script must be `oxfmt`-clean
+   (`pnpm lint` formats root-level JS and JSON too).
 6. `docs/plan/upstream-issues/fs-os-default-export-stubs.md`: an issue draft for
    BuilderIO/agent-native: title `cloudflare_pages worker bundle: default-import fs/os stubs throw (agent-chat init fails)`;
    body with: framework version, repro (`create chat`, build with `NITRO_PRESET=cloudflare_pages`,
