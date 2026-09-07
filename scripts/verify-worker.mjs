@@ -91,12 +91,19 @@ export async function terminateProcessGroup(child, graceMs = 3_000) {
   // be alive in its detached process group after that launcher exits, so the
   // process group is the lifecycle authority. The group id is the direct
   // child's pid, assigned when `spawn({ detached: true })` created it.
+  const launcherGone = () =>
+    child.exitCode !== null || child.signalCode !== null;
   const groupExists = () => {
     try {
       process.kill(-child.pid, 0);
       return true;
     } catch (error) {
       if (error?.code === "ESRCH") return false;
+      // EPERM means a group with that id exists but is not signallable by us.
+      // Once our launcher has exited its pid can be recycled, so the group is
+      // someone else's and there is nothing of ours left to terminate. While
+      // the launcher is alive, EPERM is a real failure and must surface.
+      if (error?.code === "EPERM" && launcherGone()) return false;
       throw error;
     }
   };

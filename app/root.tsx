@@ -96,6 +96,13 @@ function DbSyncSetup() {
   useDbSync({
     queryClient: qc,
     ignoreSource: TAB_ID,
+    // Polling only. The framework's SSE fast path holds a response open with no
+    // pending I/O, which the Workers runtime cancels ("your Worker's code had
+    // hung and would never generate a response") — and under `wrangler dev`
+    // that cancellation is a fatal error that stops the dev server. Polling is
+    // the framework's documented transport for exactly this case (serverless
+    // and edge). See docs/plan/DISCREPANCIES.md.
+    sseUrl: false,
   });
   return null;
 }

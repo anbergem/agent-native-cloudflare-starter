@@ -3,7 +3,7 @@ import {
   useChatThreads,
   type ChatThreadSummary,
 } from "@agent-native/core/client/agent-chat";
-import { useT } from "@agent-native/core/client/i18n";
+import { useFormatters, useT } from "@agent-native/core/client/i18n";
 import { openCommandMenu } from "@agent-native/core/client/navigation";
 import { OrgSwitcher } from "@agent-native/core/client/org";
 import { AgentNativeIcon, FeedbackButton } from "@agent-native/core/client/ui";
@@ -13,11 +13,15 @@ import {
   type ChatHistoryItem,
 } from "@agent-native/toolkit/chat-history";
 import {
+  IconBriefcase,
+  IconBuilding,
+  IconHistory,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconMessageCircle,
   IconSearch,
   IconSettings,
+  IconUsers,
 } from "@tabler/icons-react";
 import { useEffect, useMemo } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
@@ -33,6 +37,24 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   {
+    icon: IconBriefcase,
+    labelKey: "navigation.jobs",
+    href: "/jobs",
+    view: "app",
+  },
+  {
+    icon: IconBuilding,
+    labelKey: "navigation.customers",
+    href: "/customers",
+    view: "app",
+  },
+  {
+    icon: IconHistory,
+    labelKey: "navigation.activity",
+    href: "/activity",
+    view: "app",
+  },
+  {
     icon: IconMessageCircle,
     labelKey: "navigation.chat",
     href: "/home",
@@ -41,6 +63,12 @@ const navItems = [
 ];
 
 const bottomNavItems = [
+  {
+    icon: IconUsers,
+    labelKey: "navigation.team",
+    href: "/team",
+    view: "team",
+  },
   {
     icon: IconSettings,
     labelKey: "navigation.settings",
@@ -58,23 +86,8 @@ interface SidebarProps {
   onCollapsedChange?: (collapsed: boolean) => void;
 }
 
-function formatThreadAge(updatedAt: number) {
-  const diffMs = Math.max(0, Date.now() - updatedAt);
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "now";
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d`;
-  return new Date(updatedAt).toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function threadTitle(thread: ChatThreadSummary) {
-  return thread.title || thread.preview || "Untitled chat";
+function threadTitle(thread: ChatThreadSummary, fallback: string) {
+  return thread.title || thread.preview || fallback;
 }
 
 function threadUpdatedAt(thread: ChatThreadSummary) {
@@ -125,6 +138,7 @@ function ChatThreadsSection({ open }: { open: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
   const t = useT();
+  const formatters = useFormatters();
   const {
     threads,
     activeThreadId,
@@ -154,15 +168,18 @@ function ChatThreadsSection({ open }: { open: boolean }) {
     () =>
       visibleThreads.map((thread) => ({
         id: thread.id,
-        title: threadTitle(thread),
-        titleText: threadTitle(thread),
+        title: threadTitle(thread, t("chat.untitled")),
+        titleText: threadTitle(thread, t("chat.untitled")),
         timestamp:
           thread.id === displayedActiveThreadId
             ? undefined
-            : formatThreadAge(threadUpdatedAt(thread)),
+            : formatters.formatDate(threadUpdatedAt(thread), {
+                month: "short",
+                day: "numeric",
+              }),
         pinned: Boolean(thread.pinnedAt),
       })),
-    [displayedActiveThreadId, visibleThreads],
+    [displayedActiveThreadId, formatters, t, visibleThreads],
   );
 
   useEffect(() => {

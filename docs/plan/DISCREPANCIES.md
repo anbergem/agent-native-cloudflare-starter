@@ -904,3 +904,294 @@ share task/implementation with non-overlapping file ownership; the coordinating 
 verifies and commits milestones. This replaces one branch per small task while preserving
 review and acceptance evidence. Preparation may overlap, but integration remains gated by the
 Worker/CLI proof before accounting/UI acceptance.
+
+## 2026-09-07 T14 — `flatRoutes()` nests `jobs.$id.tsx` under `jobs.tsx`, so `/jobs/:id` served the list
+
+Expected (plan reference): `docs/plan/tasks/T14-ui.md` step 1 and `docs/plan/03-blueprint.md`
+B17 name the detail routes `app/routes/jobs.$id.tsx` and `app/routes/customers.$id.tsx`
+alongside the list routes `jobs.tsx` and `customers.tsx`.
+
+Observed: `app/routes.ts` is `flatRoutes()`, whose convention makes a dot-separated child a
+**nested** route. The generated types are explicit:
+
+```
+$ cat .react-router/types/app/routes/+types/jobs.$id.ts
+type Matches = [{ id: "root"; ... }, { id: "routes/jobs"; ... }, { id: "routes/jobs.$id"; ... }];
+```
+
+`jobs.tsx` is the list page and renders no `<Outlet />`, so `GET /jobs/job_in_progress`
+rendered the **jobs list** with the URL unchanged. Every Playwright spec that opened a detail
+page failed on a 30-second locator timeout, and `isolation.spec.ts` failed differently and
+worse: an outsider at `/jobs/job_scheduled` saw their own organization's list instead of the
+not-found state, so the spec could not observe the isolation it exists to prove (the server was
+never wrong — `get-job` returned 404 throughout).
+
+Impact: T14 step 1's two file names; the `/jobs/:id` and `/customers/:id` rows of B17; seven of
+the twelve specs T16 delivers.
+
+Proposed handling: renamed to `app/routes/jobs_.$id.tsx` and `app/routes/customers_.$id.tsx`.
+The trailing underscore is the flat-routes opt-out from the parent layout and keeps the URL at
+`/jobs/:id`. The alternative — `jobs.tsx` becomes an `<Outlet />` shell plus a new
+`jobs._index.tsx` — adds a file and a layout the plan never asked for, for the same result.
+
+Resolution: 2026-09-07 — B17 and T14 step 1 updated to the underscored file names, with the reason.
+
+## 2026-09-07 T14 — route components rendered a second `main` inside the scaffold's `main`
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B17 ("The scaffold `Layout` with the
+agent sidebar stays") and `docs/plan/tasks/T14-ui.md` step 2, neither of which says what
+element a route component's root should be.
+
+Observed: `app/components/layout/Layout.tsx` (scaffold) already wraps `{children}` in
+`<main className="agent-native-app-main">`, and all five new route components opened with their
+own `<main>`. The page therefore had nested `main` landmarks, and `locator("main")` in the
+browser suite matched two elements, so a chained assertion could resolve to a filter
+`<option>` in one `main` and a status badge in the other:
+
+```
+Error: strict mode violation: locator('main').getByText('In progress', { exact: true }) resolved to 2 elements:
+    1) <option value="in_progress">In progress</option>
+    2) <span class="...">In progress</span>
+```
+
+Impact: T14 step 2, plus the locators in five T16 specs.
+
+Proposed handling: the five route components render `<div>` sections; a comment at the
+`Layout` `main` says it is the document's only landmark. Status badges also carry a
+`data-testid`, so the suite asserts on the badge rather than on a page-wide text match.
+
+Resolution: 2026-09-07 — B17 and T14 step 2 updated: the scaffold layout owns the only `main`.
+
+## 2026-09-07 T15 — the framework substitutes `{{name}}` only, so `{date}` reached the screen verbatim
+
+Expected (plan reference): `docs/plan/02-framework-facts.md` F14 ("`useT()(key, params)`")
+does not state the placeholder syntax, and `docs/plan/tasks/T15-i18n.md` step 2 only requires
+"identical keys and placeholders" between the two catalogs.
+
+Observed: `node_modules/@agent-native/core/dist/client/i18n.js:538` interpolates one form:
+
+```js
+return template.replace(/\{\{(\w+)\}\}/g, (_, name) => { ... });
+```
+
+Two app strings used a single brace — `jobs.scheduledFor: "Scheduled for {date}"` and
+`jobs.accountingReference: "Accounting reference: {reference}"` — so the job detail page showed
+the literal text `Scheduled for {date}`. The scaffold's own deleted catalog used `{{title}}`
+throughout, which is where the correct form was visible all along; two of its accessible
+labels (`chat.optionsFor`, `chat.renameThread`) had also lost their `{{title}}` in the rewrite
+and read "Options for" for every thread.
+
+Impact: T15 steps 1 and 2, and the guard in step 6, which compared both forms and so could
+never catch it — two equally broken catalogs passed parity.
+
+Proposed handling: all four strings use `{{name}}`. `scripts/check-i18n-catalogs.mjs` now
+reports any single-brace placeholder by locale and key, with a regression fixture in
+`tests/guards/i18n-catalogs.test.mjs` proving that two catalogs which agree on a broken
+placeholder still fail.
+
+Resolution: 2026-09-07 — F14 records the interpolation form; B17, T15 steps 1 and 6 updated.
+
+## 2026-09-07 T15 — the `errors` group was missing `EXTERNAL`
+
+Expected (plan reference): `docs/plan/tasks/T15-i18n.md` step 1 — "`errors` (one key per
+`AppErrorCode`)".
+
+Observed: `src/application/errors.ts` declares eight codes; both catalogs carried seven of
+them plus the `UNKNOWN` fallback, and `EXTERNAL` was absent. `EXTERNAL` is the code B22's
+accounting export returns when the vendor call does not confirm, so the one error a user is
+most likely to have to act on rendered as the raw key. The guard's own `errors.` family list
+had the same gap, so it agreed.
+
+Impact: T15 step 1 and step 6.
+
+Proposed handling: added `errors.EXTERNAL` to both catalogs, wording that says a retry
+reconciles the request (B22 step 4), and added the code to the guard's `errors.` family with a
+comment tying that list to `AppErrorCode`.
+
+Resolution: 2026-09-07 — T15 step 1 updated to name all eight codes and the `UNKNOWN` fallback.
+
+## 2026-09-07 T16 — a held-open SSE response is cancelled on Workers and kills `wrangler dev`
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B17 ("the framework's `useDbSync` also
+refreshes") and `docs/plan/02-framework-facts.md` F9, which lists the endpoints verified on the
+patched bundle and records no limit on streaming responses.
+
+Observed: `app/root.tsx` mounts `useDbSync`, whose fast path is an `EventSource` on
+`/_agent-native/events`; the framework serves it with `createEventStream(event).send()`
+(`dist/server/sse.js`), a response held open with no pending I/O. The Workers runtime cancels
+exactly that shape, and `wrangler dev` 4.129.0 treats the cancellation as fatal:
+
+```
+✘ [ERROR] Uncaught Error: The Workers runtime canceled this request because it detected that
+  your Worker's code had hung and would never generate a response.
+✘ [ERROR]
+    at ProxyController2.emitErrorEvent (.../wrangler-dist/cli.js:200502:20)
+    at ProxyController2.onProxyWorkerMessage (.../wrangler-dist/cli.js:200379:18)
+```
+
+The dev server then exits. Observed mid-suite as `page.goto: net::ERR_CONNECTION_REFUSED`
+after a test had already passed its first assertions, which makes the browser suite flaky for
+reasons that have nothing to do with the app.
+
+Impact: T14 step 3 and B17's data-fetching paragraph; the stability of every T16 spec. It is
+not confined to the local suite: a deployed Worker cannot hold that stream open either, so the
+SSE path was never going to work on this runtime.
+
+Proposed handling: `useDbSync({ ..., sseUrl: false })`, the framework's own documented switch
+("Pass false to disable SSE and use polling only", `dist/client/use-db-sync.d.ts`), with a
+comment naming the runtime reason. `/_agent-native/poll` is the transport the framework
+describes for serverless and edge, and the UI still invalidates its own queries on every
+mutation, so nothing about the product behaviour changes. Streams that produce data and finish
+— `POST /_agent-native/agent-chat` — are unaffected and still verified by the smoke.
+
+Resolution: 2026-09-07 — F9 records the cancellation and the wrangler-fatal behaviour; B17 records `sseUrl: false`.
+
+## 2026-09-07 T16 — Playwright's teardown hangs on inherited stdio and SIGKILLs the server
+
+Expected (plan reference): `docs/plan/tasks/T16-playwright.md` step 1 ("spawn `wrangler dev …`
+(inherit stdio, keep the child) … forward SIGTERM/SIGINT to the child") and step 2's
+`webServer` block, which sets no shutdown signal.
+
+Observed: two separate faults, both at teardown.
+
+1. With inherited stdio the detached Wrangler group holds the handles Playwright gave the
+   server script. Playwright's web-server teardown waits for the process's stdout and stderr
+   to close, so the run hung indefinitely after the last test with an orphaned `workerd` still
+   on port 8787.
+2. Playwright's default teardown is `SIGKILL`, which no handler can catch, so step 1's
+   "forward SIGTERM/SIGINT" never ran at all.
+
+A third, smaller fault surfaced once the server was allowed to exit on its own:
+`terminateProcessGroup` probes `process.kill(-pid, 0)` and threw `Error: kill EPERM` from the
+cleanup path after the launcher had exited and its pid had been recycled.
+
+Impact: T16 steps 1 and 2; every local and CI run of the suite.
+
+Proposed handling: Wrangler's stdio is `["ignore", "pipe", "pipe"]` and forwarded to the
+script's own streams, so the pipes die with Wrangler and its output stays visible;
+`playwright.config.ts` sets `gracefulShutdown: { signal: "SIGTERM", timeout: 20_000 }` so the
+handler runs; the handler and the `finally` share one `teardown()` that reports a failed
+process-group stop and still removes the temporary state; and `groupExists()` treats `EPERM`
+as "not ours" only once the launcher has exited, so a real failure to signal our own live
+group still surfaces (the existing guard fixture for a sandbox without group signals still
+skips as designed). Verified: `pnpm test:e2e` exits 0 and `pgrep -f "wrangler.js dev"`,
+`pgrep -f workerd` and `lsof -nP -iTCP:8787 -sTCP:LISTEN` are all empty afterwards.
+
+Resolution: 2026-09-07 — B18, T16 steps 1 and 2 updated with the stdio rule and the shutdown signal.
+
+## 2026-09-07 T16 — the framework audit log outlives the scenario reset
+
+Expected (plan reference): `docs/plan/tasks/T16-playwright.md` step 5 ("Give each mutating test
+a fresh scenario") and `docs/plan/03-blueprint.md` B12, whose `buildScenarioResetSql()` covers
+the application tables and the two organization tables.
+
+Observed: `agent_audit_log` is framework-owned (F11) and is in neither list, so audit rows
+accumulate across the whole run — including the rows the global setup's Worker smoke writes.
+`parity.spec.ts` asserts that `job_in_progress` has exactly two `complete-job` rows and found
+four, three of them left by `complete-job.spec.ts`, `undo.spec.ts` and `jobs-lifecycle.spec.ts`.
+The assertion was correct; it was measuring the wrong population, and its result depended on
+the order the suite happened to run in.
+
+Impact: T16 step 5, and the audit assertions in `complete-job.spec.ts` and `parity.spec.ts`.
+
+Proposed handling: the reset fixture (`tests/e2e/reset.ts`) prepends
+`DELETE FROM agent_audit_log WHERE org_id IN ('org_acme', 'org_other')` to the scenario reset.
+Org-scoped like every other reset statement, and kept in the end-to-end helper rather than in
+`buildScenarioResetSql()`: B12's builders are the application scenario and are also used by the
+seed script and the unit tests, none of which should be deleting framework rows.
+
+Resolution: 2026-09-07 — B18 and T16 step 5 updated: the browser suite's reset also clears the org's audit rows.
+
+## 2026-09-07 T14/T16 — verification the plan leaves manual, and two ambiguous accessible names
+
+Expected (plan reference): `docs/plan/tasks/T14-ui.md` step 7 ("Verify manually … create a
+customer, create a job for it, start, reschedule, complete, undo from the toast, redo from the
+toast, archive … the member account does not see the archive-customer button") and step 4's
+"Send to accounting" button, none of which T16's required spec list covers.
+
+Observed: with the suite running against the built Worker, the parts of step 7 that a spec can
+assert were left unasserted, and `app/routes/customers_.$id.tsx` had no coverage at all. Two
+smaller findings came out of writing those specs: the customer dialog's inputs carried a
+`placeholder` and no `aria-label` (unlike the job dialog's), which is both an accessibility gap
+and unaddressable from a test; and creating a customer reported "Customer updated" because the
+create and archive handlers shared one message.
+
+Impact: T14 steps 4 and 7; T16 step 5's spec list.
+
+Proposed handling: added `tests/e2e/customers.spec.ts` (a member creates a customer in the
+dialog and opens its detail route) and `tests/e2e/accounting.spec.ts` (the export button is
+hidden from a member; an admin confirms a dialog that states the action is irreversible; the
+returned reference appears; the recorded operation is neither undoable nor redoable, and the
+activity page renders no Undo for it). Added `aria-label` to the three customer inputs and a
+`customers.created` message in both catalogs. The remaining manual parts of step 7 — the agent
+answering "list my jobs", and the `de-DE` round trip of T15 step 5 — still need a person and a
+provider key.
+
+Resolution: 2026-09-07 — T16 step 5 lists the two added specs; T14 step 2 requires an `aria-label` on every control.
+
+## 2026-09-07 T17/T18 — `pnpm eval` needs a wrapper, and CI runs the browser suite as its own job
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B15 (`eval` → `agent-native eval`),
+`docs/plan/tasks/T18-ci.md` step 1 (the `worker` job builds, uploads, writes `.dev.vars` and
+runs Playwright) and B20's matching paragraph.
+
+Observed: two shapes the plan fixes could not be kept.
+
+1. `agent-native eval` loads `evals/*.eval.ts` in a plain Node process, whose type stripping
+   cannot resolve the extensionless imports the application layers use, so an eval that reaches
+   a real use case fails to import. A model-backed run also needs a migrated and seeded
+   database, which `agent-native eval` does not create.
+2. Writing `.dev.vars` in CI has no effect on the browser suite: `scripts/e2e-server.mjs` runs
+   Wrangler against a generated configuration in its own temporary directory and sets
+   `CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false`, so the repository file is never read. Keeping
+   the step would have implied a dependency that does not exist.
+
+Impact: B15's `eval` row, T17 step 2, T18 step 1 and B20's `ci.yml` paragraph.
+
+Proposed handling: `eval` runs `node scripts/run-evals.mjs`, which creates a temporary SQLite
+database, applies `migrations/` and seeds the scenario **only** for `RUN_MODEL_EVALS=1`, sets
+`NODE_OPTIONS=--import tsx`, and then delegates to `agent-native eval`; a skipped run therefore
+still touches no database and exits 0. CI keeps `verify` and `worker` and adds a third `e2e`
+job that downloads the `worker-bundle` artifact into `dist/`, installs Chromium and runs
+`pnpm test:e2e`, uploading `playwright-report/` on failure — the bundle is built once (D21), the
+`worker` job proves it boots with `pnpm verify:worker`, and no `.dev.vars` is written.
+
+Resolution: 2026-09-07 — B15, B20, T17 step 2 and T18 step 1 updated to the delivered shapes.
+
+## 2026-09-07 T14 — `home.tsx` stays the agent chat page
+
+Expected (plan reference): `docs/plan/tasks/T14-ui.md` step 1 — "make `home.tsx` redirect to
+`/jobs` and set the framework's `app.homePath` to `/jobs`".
+
+Observed: the two halves of that sentence do the same job, and only the second one is safe.
+`app/routes/chat.$threadId.tsx` is `export { default, meta } from "./home"`, and the scaffold
+`Layout` treats `/home` as the chat route (its own toolbar, the full-screen chat surface, the
+handoff from the sidebar) — a step 1 the plan also tells this task to keep. Turning `home.tsx`
+into a redirect would delete the agent chat page and break `/chat/:threadId` with it.
+
+Impact: T14 step 1 only.
+
+Proposed handling: `app.homePath` is `/jobs` in
+`server/plugins/agent-native-email-branding.ts`, so sign-in lands on the jobs list, and
+`app/routes/_index.tsx` navigates `/` to `/jobs`. `/home` remains the chat page, reachable
+only from the sidebar's Chat entry. The observable behaviour step 1 asks for — nobody lands on
+`/home` by default — holds.
+
+Resolution: 2026-09-07 — T14 step 1 updated: keep `home.tsx`, set `homePath`, redirect from `_index.tsx`.
+
+## 2026-09-07 T14 — `useOrgRole` is imported from `@agent-native/core/client/org`
+
+Expected (plan reference): `docs/plan/02-framework-facts.md` F4 lists
+`@agent-native/core/client/org-team` as the import path for `OrgSwitcher`, `TeamPage`,
+`useOrgRole` and `RequireActiveOrg`.
+
+Observed: `node_modules/@agent-native/core/package.json` exports both `./client/org` and
+`./client/org-team`, and the scaffold's own `app/routes/settings.tsx` — untouched by this task
+— already imports `TeamPage` from `./client/org`. The app follows the scaffold.
+
+Impact: F4's import table only; no behaviour.
+
+Proposed handling: kept the shorter path the scaffold established and recorded both in F4,
+together with the shape of `useOrgRole()`'s result (`canManageOrg`) that the role-aware UI uses.
+
+Resolution: 2026-09-07 — F4 updated.
