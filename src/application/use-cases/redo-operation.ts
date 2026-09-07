@@ -32,6 +32,7 @@ import {
 import type { Actor } from "../actor";
 import { requireCapability } from "../authorization";
 import { AppError } from "../errors";
+import { mayRedo, requireHistoryPermission } from "../history-policy";
 import type { Dependencies } from "../ports";
 import { applyDomain, isCreateOperation, type UndoRedoResult } from "./command";
 
@@ -88,6 +89,9 @@ async function loadForwardOperation(
   if (isCreateOperation(forward)) {
     throw new AppError("INVARIANT", "A create cannot be redone");
   }
+  if (forward.kind !== "forward")
+    throw new AppError("INVARIANT", NOT_REDOABLE_MESSAGE);
+  requireHistoryPermission(mayRedo(actor, forward));
   return forward;
 }
 

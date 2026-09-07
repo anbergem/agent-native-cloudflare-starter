@@ -9,7 +9,9 @@ section 46.
 
 1. Fresh clone into a new directory; `pnpm install --frozen-lockfile`; `pnpm check`;
    `pnpm test:integration`; `pnpm build:worker`; `pnpm test:e2e`; `pnpm db:reset && pnpm dev`
-   + `pnpm db:seed` + manual sign-in; `pnpm eval` (skipped run). Record every command and its
+   + `pnpm db:seed` + manual sign-in; `pnpm eval` (skipped run), plus the real agent write/read/undo and approval evidence from
+   T17 when credentials are available. A skipped run cannot satisfy that release criterion;
+   explicitly list it as pending when unavailable. Record every command and its
    last lines.
 2. Security review checklist (write results into the report): every SQL constant scoped
    (test exists); every action goes through `runAppAction`; no `authorize`-less path to a use

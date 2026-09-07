@@ -44,6 +44,7 @@ import {
 import type { Actor } from "../actor";
 import { requireCapability } from "../authorization";
 import { AppError } from "../errors";
+import { mayUndo, requireHistoryPermission } from "../history-policy";
 import type { Dependencies } from "../ports";
 import { applyDomain, type UndoRedoResult } from "./command";
 
@@ -171,6 +172,7 @@ export async function undoOperation(
     const customer = await deps.customers.getById(actor.orgId, op.resourceId);
     if (!customer) throw new AppError("NOT_FOUND", "Customer not found");
     assertUndoable(op, customer.version);
+    requireHistoryPermission(mayUndo(actor, op));
 
     const now = deps.clock.now();
     const restored = applyDomain(() =>
@@ -204,6 +206,7 @@ export async function undoOperation(
   const job = await deps.jobs.getById(actor.orgId, op.resourceId);
   if (!job) throw new AppError("NOT_FOUND", "Job not found");
   assertUndoable(op, job.version);
+  requireHistoryPermission(mayUndo(actor, op));
 
   const now = deps.clock.now();
   const restored = applyDomain(() => applyJobInverse(op.inverse, job, now));

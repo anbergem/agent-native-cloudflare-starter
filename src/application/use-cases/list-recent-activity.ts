@@ -22,6 +22,7 @@ import { canUndo } from "../../domain";
 import type { Actor } from "../actor";
 import { requireCapability } from "../authorization";
 import { AppError } from "../errors";
+import { mayUndo, mayRedo } from "../history-policy";
 import type { Dependencies } from "../ports";
 import { isCreateOperation } from "./command";
 
@@ -143,14 +144,16 @@ export async function listRecentActivity(
         : null;
     return {
       ...op,
-      undoable: version !== null && canUndo(op, version).ok,
+      undoable:
+        version !== null && canUndo(op, version).ok && mayUndo(actor, op),
       redoable:
         version !== null &&
         op.kind === "undo" &&
         op.undoneByOperationId === null &&
         op.versionAfter === version &&
         forward !== null &&
-        !isCreateOperation(forward),
+        !isCreateOperation(forward) &&
+        mayRedo(actor, forward),
     };
   });
 }

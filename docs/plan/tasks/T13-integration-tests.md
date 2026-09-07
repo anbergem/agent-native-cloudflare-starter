@@ -22,7 +22,7 @@ Depends on: T10, T11. Read: F6 (CLI identity), F13; B18 (integration row).
    `member1@example.invalid`/`org_acme` `complete-job '{"jobId":"job_in_progress"}'` → stdout JSON
    `resource.status === "completed"`, `resource.version === 3`; then `list-recent-activity` shows
    the new `complete-job` operation with `performedVia: "cli"`; `undo-operation` with that id →
-   `resource.status === "in_progress"`; `member1`/`org_other` `get-job '{"jobId":"job_scheduled"}'`
+   `resource.status === "in_progress"`; `outsider@example.invalid`/`org_other` `get-job '{"jobId":"job_scheduled"}'`
    → non-zero exit and stderr containing `NOT_FOUND`; `member1`/`org_acme`
    `archive-customer '{"customerId":"cus_b"}'` → stderr containing `AUTHORIZATION`;
    `admin@example.invalid`/`org_acme` same call → success.

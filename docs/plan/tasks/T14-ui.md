@@ -21,7 +21,7 @@ Depends on: T10, T27. Read: F4 (client imports), F5 (client hooks); B2 (ui rules
    through `useFormatters()`.
 3. Mutations: `useActionMutation("<name>")`; on success invalidate the affected `list-*` and
    `get-*` queries and call `toast(<message>, { action: { label: t("common.undo"), onClick: () =>
-   undo(operationId) } })`; after a successful undo, toast with a Redo action. On error show
+   undo(operationId) } })`; offer Undo/Redo only when the history policy says the resulting operation permits it; creates have no Redo and irreversible exports have no Undo. On error show
    `t("errors." + errorCode)` when `errorCode` is present, else `actionErrorMessage(err)`.
 4. Role-aware UI: `useOrgRole()` hides the archive-customer button and the "Send to accounting"
    button (job detail, visible only when the job is completed and not yet sent; opens a
@@ -32,7 +32,7 @@ Depends on: T10, T27. Read: F4 (client imports), F5 (client hooks); B2 (ui rules
 6. Every user-visible string goes through `useT()`; add keys to `app/i18n/en-US.ts` (T15 adds
    `nb-NO`). No hard-coded English in components.
 7. Verify manually with `pnpm db:reset && pnpm dev && pnpm db:seed`: create a customer, create a
-   job for it, start, complete, undo from the toast, redo from the toast, reschedule, archive;
+   job for it, start, reschedule, complete, undo from the toast, redo from the toast, archive;
    the activity page lists every operation including undo/redo with kind labels; the member
    account does not see the archive-customer button; with an `ANTHROPIC_API_KEY` in `.env` the
    agent sidebar answers "list my jobs" using `list-jobs` (optional).

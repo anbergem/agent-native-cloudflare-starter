@@ -1,12 +1,13 @@
 # T18 — CI workflow
 
-Goal: `.github/workflows/ci.yml` per B20, green on GitHub Actions.
+Goal: finish the CI workflow per B20, green on GitHub Actions. The review corrections
+introduce the initial workflow; T12 adds smoke and T16 adds Playwright as soon as they exist.
 
 Depends on: T13, T16, T17. Read: B20; D21.
 
 ## Steps
 
-1. Write `ci.yml`: triggers `pull_request` and `push` to `main`; `concurrency` group
+1. Extend the existing `ci.yml`: triggers `pull_request` and `push` to `main`; `concurrency` group
    `ci-${{ github.ref }}` with cancel-in-progress; job `verify` (ubuntu-latest, 20 min):
    `actions/checkout@v4`, `pnpm/action-setup@v4` (version from `packageManager`),
    `actions/setup-node@v4` with `node-version-file: .nvmrc` and `cache: pnpm`,
