@@ -30,14 +30,16 @@ Depends on: T12, T15. Read: F6, F9; B12, B18, B19.
    `outsiderPage` (new context per fixture from the stored state) and an `assertSameOrigin`
    auto-fixture that registers `page.on("request")` and throws on any URL whose origin differs
    from `baseURL` (allow `data:` and `blob:`).
-5. Specs (one file each): `auth.spec.ts` (owner loads `/jobs`, header shows the email and
+5. Give each mutating test a fresh scenario (reset and reseed the two test orgs) or unique
+   resources. One worker prevents concurrency but does not prevent state leaking between tests.
+   Specs (one file each): `auth.spec.ts` (owner loads `/jobs`, header shows the email and
    "Acme Services"); `jobs-list.spec.ts` (member sees three jobs); `complete-job.spec.ts`
    (member completes `job_in_progress`; status badge updates; activity page shows the
    operation; `GET /_agent-native/actions/list-audit-events?targetType=job&targetId=job_in_progress`
    via `page.request` contains `action: "complete-job"`, `caller: "frontend"`); `undo.spec.ts`
    (complete then Undo from the toast; status restored; activity shows an `undo` operation);
-   `undo-conflict.spec.ts` (member completes `job_scheduled` in the UI; admin reschedules it via
-   `page.request.post("/_agent-native/actions/reschedule-job")`; member clicks Undo; the UI shows
+   `undo-conflict.spec.ts` (member reschedules `job_scheduled` in the UI; admin completes it via
+   `page.request.post("/_agent-native/actions/complete-job")`; member clicks Undo; the UI shows
    the CONFLICT message; status stays completed); `isolation.spec.ts` (outsider visits
    `/jobs/job_scheduled` and sees the not-found state; `page.request.get(".../get-job?jobId=job_scheduled")`
    returns 404); `authorization.spec.ts` (member's `page.request.post(".../archive-customer")`

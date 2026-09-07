@@ -697,6 +697,66 @@ describe("redoOperation", () => {
 // ---------------------------------------------------------------------------
 
 describe("undo and redo in the activity feed", () => {
+  it("does not let a member undo or redo an admin's customer archive", async () => {
+    const deps = seeded();
+    const archived = await archiveCustomer(deps, acmeAdmin, {
+      customerId: CUSTOMER_A_ID,
+    });
+    await expect(
+      undoOperation(deps, userA, { operationId: archived.operationId }),
+    ).rejects.toMatchObject({ code: "AUTHORIZATION" });
+    const undone = await undoOperation(deps, acmeAdmin, {
+      operationId: archived.operationId,
+    });
+    await expect(
+      redoOperation(deps, userA, { operationId: undone.operationId }),
+    ).rejects.toMatchObject({ code: "AUTHORIZATION" });
+    expect(customerOf(deps, CUSTOMER_A_ID).status).toBe("active");
+    const activity = await listRecentActivity(deps, userA);
+    expect(activity.find((op) => op.id === undone.operationId)?.redoable).toBe(
+      false,
+    );
+    const redone = await redoOperation(deps, acmeOwner, {
+      operationId: undone.operationId,
+    });
+    expect(redone.resource.status).toBe("archived");
+  });
+
+  it("lets members compensate their own customer creation but not a coworker's", async () => {
+    const deps = seeded();
+    const created = await createCustomer(deps, userA, {
+      name: "Example new customer",
+    });
+    await expect(
+      undoOperation(deps, userB, { operationId: created.operationId }),
+    ).rejects.toMatchObject({ code: "AUTHORIZATION" });
+    const activity = await listRecentActivity(deps, userB);
+    expect(activity.find((op) => op.id === created.operationId)?.undoable).toBe(
+      false,
+    );
+    expect(
+      (await undoOperation(deps, userA, { operationId: created.operationId }))
+        .resource.status,
+    ).toBe("archived");
+  });
+
+  it("rechecks the actor's current role even when they performed the original archive", async () => {
+    const deps = seeded();
+    const archived = await archiveCustomer(deps, acmeAdmin, {
+      customerId: CUSTOMER_A_ID,
+    });
+    const undone = await undoOperation(deps, acmeAdmin, {
+      operationId: archived.operationId,
+    });
+    await expect(
+      redoOperation(
+        deps,
+        { ...acmeAdmin, role: "member" },
+        { operationId: undone.operationId },
+      ),
+    ).rejects.toMatchObject({ code: "AUTHORIZATION" });
+  });
+
   it("lists the undo and redo rows with their kind, and offers the right button", async () => {
     const deps = seeded();
     const forward = await completeJob(deps, userA, {

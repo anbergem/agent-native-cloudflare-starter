@@ -1,8 +1,8 @@
 # Task index
 
 Status values: `todo`, `in-progress (<who>)`, `blocked (<discrepancy id>)`, `done (<PR>)`.
-Update this table in the same pull request that delivers the task. Pick the lowest-numbered
-`todo` task whose dependencies are all `done`.
+Update this table in the same pull request that delivers the task. Pick ready tasks in this order after T11: review corrections → T12/T13 with CI → T27 →
+T14/T15/T16 → T17/T18 → delivery/docs/final verification. CI grows with each milestone.
 
 | ID | Title | Depends on | Status |
 | --- | --- | --- | --- |
@@ -24,7 +24,7 @@ Update this table in the same pull request that delivers the task. Pick the lowe
 | T15 | Internationalization | T14 | todo |
 | T16 | Playwright end-to-end suite | T12, T15 | todo |
 | T17 | Agent evals | T10, T11 | todo |
-| T18 | CI workflow | T13, T16, T17 | todo |
+| T18 | CI workflow | T13, T16, T17 | in-progress (baseline introduced by review corrections) |
 | T19 | Staging deployment workflow | T18 | todo |
 | T20 | Production deployment workflow | T19 | todo |
 | T21 | Backups and restore | T20 | todo |
@@ -36,10 +36,10 @@ Update this table in the same pull request that delivers the task. Pick the lowe
 | T27 | External integration port and `send-job-to-accounting` | T10 | todo |
 
 Parallelism: T04 and T05 can run in parallel with T02/T03. T11 can run in parallel with
-T08–T10. T27 runs right after T10 and before T14. T14/T15 can run in parallel with T12/T13. T25 can run any time after T15.
+T08–T10. T27 follows the Worker/CLI proof (T12/T13) and precedes T14. T14/T15 can run in parallel with T12/T13. T25 can run any time after T15.
 
 ## Common acceptance rule
 
 Unless a task says otherwise, every task's acceptance includes `pnpm check` passing (once T01
-exists) and `git diff --stat` showing only files the task lists under "Deliverables" plus
+exists) and `git diff --stat` showing the listed deliverables, documented correctness fixes needed for the task, plus
 `docs/plan/tasks/README.md` and, when applicable, `docs/plan/DISCREPANCIES.md`.

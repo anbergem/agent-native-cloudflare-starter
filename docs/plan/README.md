@@ -31,7 +31,7 @@ of the implementation. If the two conflict, the plan wins, and the conflict is r
 4. Read, in this order: this file; the task file; the listed sections of
    `02-framework-facts.md` and `03-blueprint.md`; every existing file the task lists under
    "Read before starting".
-5. Implement exactly the steps in the task. Steps are numbered; do them in order. Where a step
+5. Implement the task’s intended behavior. Use the numbered steps as a starting point. Where a step
    says "verify", run the command and keep the output for the PR.
 6. Run every command under the task's "Acceptance" heading. All must pass. If a command does
    not exist yet because an earlier task was not done, that is a dependency error: stop and
@@ -42,15 +42,17 @@ of the implementation. If the two conflict, the plan wins, and the conflict is r
 
 ## Rules
 
-- **Scope.** Do only what the task says. If you notice something else that is wrong, write a
-  one-paragraph note in the PR body under "Observations". Do not fix it.
-- **No new dependencies** unless the task lists them by exact name and version. If you believe
-  one is needed, record it in `DISCREPANCIES.md` as "blocked, needs a decision".
-- **Framework facts are law.** `02-framework-facts.md` was verified by running the framework.
-  When your observation differs, follow the discrepancy protocol below; do not guess.
-- **Discrepancy protocol.** Append an entry to `DISCREPANCIES.md` using its template. Finish
-  every task step that does not depend on the discrepancy. Mark the task `blocked` in the index
-  if any acceptance command cannot pass because of it.
+- **Scope.** Keep changes focused on the task’s intended behavior. Include small correctness
+  fixes to dependencies, fixtures, signatures and guards when needed; explain them in the PR
+  and update affected plan instructions. Unrelated features remain out of scope.
+- **Dependencies.** Prefer existing packages. A necessary new package must be pinned exactly,
+  justified in a decision record, and included in the lockfile and verification.
+- **Framework evidence.** `02-framework-facts.md` is a versioned record of observations, not
+  a substitute for testing. Verify APIs against installed docs/types and update stale facts.
+- **Discrepancy protocol.** Append evidence and resolution to `DISCREPANCIES.md`. Correct
+  affected normative text in the blueprint and downstream task files in the same change.
+  Preserve product intent, invariants and security policy. Escalate material design changes;
+  mark a task blocked only when a required decision or external dependency prevents progress.
 - **Determinism.** Seeds, fixtures and tests use the fixed identifiers in
   `03-blueprint.md` section 12. Never generate random test data.
 - **Secrets.** Only `*.example` files are committed. Real values live in `.env` (Node dev

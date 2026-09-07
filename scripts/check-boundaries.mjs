@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 // Layer-boundary checker for the rules in docs/plan/03-blueprint.md section B2.
 //
-// Why a hand-written checker: the layer rules are the architecture. They must fail the
-// build, not live in a document, and they must not add a dependency (Node 22, ESM, no
-// packages).
+// Why an application-specific checker: the layer rules are the architecture. They must fail the
+// build, not live only in a document. Babel parses TS/TSX so formatting cannot hide imports.
 //
 // Enforcement model, derived from the two columns of the B2 table:
 //   * "Must never import" is always an error.
@@ -22,11 +21,14 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 
-const repoRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-);
+import { collectImportSpecifiers } from "./lib/import-specifiers.mjs";
+
+const { values } = parseArgs({ options: { root: { type: "string" } } });
+const repoRoot = values.root
+  ? path.resolve(values.root)
+  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const WALK_ROOTS = ["src", "actions", "app"];
 const SKIP_DIRS = new Set([
@@ -135,55 +137,11 @@ function collectFiles(dir) {
   return found;
 }
 
-/**
- * Remove comments so that specifiers mentioned in prose are not parsed as imports.
- * Newlines are preserved so line numbers stay correct.
- * @param {string} source
- */
-function stripComments(source) {
-  const withoutBlockComments = source.replace(/\/\*[\s\S]*?\*\//g, (match) =>
-    match.replace(/[^\n]/g, " "),
-  );
-  return withoutBlockComments
-    .split("\n")
-    .map((line) => {
-      let index = line.indexOf("//");
-      while (index !== -1) {
-        const before = line.slice(0, index);
-        const quotes = (before.match(/["'`]/g) ?? []).length;
-        if (quotes % 2 === 0) return before;
-        index = line.indexOf("//", index + 2);
-      }
-      return line;
-    })
-    .join("\n");
-}
-
-const STATIC_IMPORT = /^\s*(?:import|export)\b[^;]*?from\s*["']([^"']+)["']/;
-const SIDE_EFFECT_IMPORT = /^\s*import\s*["']([^"']+)["']/;
-const DYNAMIC_IMPORT = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
-
-/**
- * @param {string} file repo-relative path
- * @returns {{ specifier: string, line: number }[]}
- */
+/** @param {string} file */
 function readSpecifiers(file) {
-  const source = stripComments(readFileSync(path.join(repoRoot, file), "utf8"));
-  /** @type {{ specifier: string, line: number }[]} */
-  const specifiers = [];
-  const lines = source.split("\n");
-  for (const [index, line] of lines.entries()) {
-    const lineNumber = index + 1;
-    const staticMatch =
-      STATIC_IMPORT.exec(line) ?? SIDE_EFFECT_IMPORT.exec(line);
-    if (staticMatch?.[1])
-      specifiers.push({ specifier: staticMatch[1], line: lineNumber });
-    for (const dynamic of line.matchAll(DYNAMIC_IMPORT)) {
-      if (dynamic[1])
-        specifiers.push({ specifier: dynamic[1], line: lineNumber });
-    }
-  }
-  return specifiers;
+  return collectImportSpecifiers(
+    readFileSync(path.join(repoRoot, file), "utf8"),
+  );
 }
 
 /**

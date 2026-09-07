@@ -249,12 +249,34 @@ vendor, live in D1. Three rules follow and are demonstrated by `send-job-to-acco
 1. Undo applies only to data we own. A command with an external effect is classified
    `compensatable` (a documented compensating command exists) or `irreversible`, never
    `reversible`.
-2. A local write and a vendor call are two steps, never one transaction. The vendor call
-   carries an idempotency key derived from our resource id; the local "sent" state is a
-   separate version-guarded commit; a retry after a partial failure asks the vendor with the
-   same key and records the answer.
+2. A local write and a vendor call are two steps, never one transaction. A durable pending request precedes the vendor call
+   and carries an idempotency key derived from our resource id; the local "sent" state is a
+   separate version-guarded commit. A retry reconciles the stored request even after local
+   status changes (D27), asks the vendor with the same key, and records the answer.
 3. Agents reach external writes only through our actions. Irreversible external effects set
    `needsApproval: true` so the agent must obtain a human approval for that exact call.
 Consequences: `docs/integrations.md` becomes a first-class document; the sample app gains one
 integration-backed command with a mock adapter; the customer app replaces the mock with a real
 adapter and keeps everything else.
+
+## D27 — Review corrections and evidence-led execution (2026-09-06)
+
+The maintainer authorized the repository review corrections and continued implementation.
+- Undo/redo requires both history permission and the capability for the actual business effect.
+  Members may compensate their own customer creation; other customer history requires
+  `customers:archive`. Job history may be reversed by coworkers with the matching job capability.
+  Permission is evaluated against the caller's current role; activity flags use the same policy.
+- The boundary checker uses `@babel/parser` **7.29.8**, already in the framework's dependency
+  graph and now an explicit pinned dev dependency, to parse TS/TSX rather than line regexes.
+- CI starts now with the current checks, repositories and Worker build. T12 adds runtime smoke;
+  T16 adds the browser flow; T18 closes the full CI acceptance rather than introducing CI late.
+- External writes persist an immutable pending request before contacting the vendor. Retries
+  reconcile that request even if the job has since been archived; no queue or distributed
+  transaction is introduced. See B22 and T27.
+- Production promotion verifies the selected staging workflow, trusted branch, successful
+  conclusion and artifact SHA, and checks out that SHA for migrations and configuration.
+- Model calls remain optional on ordinary PRs. Release verification must include a real agent
+  write/read/undo and approval scenario, or explicitly report that release evidence is pending.
+- Framework compatibility patches remain bounded exceptions. Each upgrade verifies an actual
+  Worker action flow, not only a patch match count. More runtime surgery requires reassessing
+  the Node/libSQL fallback before adopting it as a new permanent template requirement.

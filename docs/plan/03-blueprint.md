@@ -50,8 +50,9 @@ symlink, and every `.agents/skills/*` except `actions`, `agent-native-docs`, `se
 | actions | `actions/` | `src/interface`, `src/application` (types only), `@agent-native/core/action`, `zod` | `src/infrastructure` directly, `server/db` |
 | ui | `app/` | `@agent-native/core/client/*`, `react*`, `src/domain` (types and pure helpers only) | `src/application`, `src/infrastructure`, `server/*` |
 
-The checker parses import specifiers with a regex over `import ... from "<spec>"` and
-`import("<spec>")` and fails with file, line and the offending specifier.
+The checker parses TS/TSX syntax with pinned `@babel/parser` (D27), including multiline,
+side-effect, dynamic literal and type imports, and re-exports. It fails with file, line and
+the offending specifier. Parser errors also fail the check. Regression fixtures prove enforcement.
 
 ## B3. Naming
 
@@ -319,6 +320,13 @@ adjusted in T10 because the domain refuses to reschedule a completed job): user 
 job v12→v13 (op1); user B completes v13→v14 (op2); A calls undo(op1) → CONFLICT; B calls
 undo(op2) → ok, v15; A calls undo(op1) → still CONFLICT (version 15 ≠ 13). T13 repeats it
 against the real repositories.
+
+History authorization (D27): both commands require `history:undo`. Redo also requires the
+original command’s capability. Undo of customer archival/restoration requires
+`customers:archive`; only the creator may compensate their own create using
+`customers:create`. Other members cannot compensate that create. Job inverses require
+`jobs:reschedule` for schedules and `jobs:transition` for lifecycle changes, regardless of who
+performed the original. Current roles are authoritative. Activity flags apply this policy.
 
 ## B10. SQL schema (`migrations/0001_init.sql`) — normative
 
@@ -666,8 +674,9 @@ Error display: map `errorCode` to `errors.<CODE>` catalog keys, fall back to the
   (including `send-job-to-accounting` with the mock accounting adapter, B22) with in-memory repositories (`tests/fixtures/in-memory.ts`) including org isolation (actor in
   `org_other` cannot read/mutate `org_acme` data → NOT_FOUND, never leaks); undo/redo including
   the B9 conflict scenario; SQL scoping test; config hygiene test; runner error mapping.
-- Integration (`tests/integration`): against a fresh Node SQLite DB (`DATABASE_URL=file:./data/test-integration.db`) migrated with `scripts/migrate-local.mjs` and seeded with SQL: real D1-shaped repositories through `getDbExec()`; CLI surface parity `AGENT_USER_EMAIL=member1@example.invalid AGENT_ORG_ID=org_acme pnpm action complete-job '{"jobId":"job_in_progress"}'` returns the job with status completed and a new `forward` operation exists; the same via `AGENT_ORG_ID=org_other` returns NOT_FOUND.
-- End-to-end (`tests/e2e`, Playwright, one worker, chromium): server = built Worker under `wrangler dev` started by `scripts/e2e-server.mjs` (reset `.wrangler/state`, apply migrations, spawn wrangler dev, poll `ping`, request `/_agent-native/health` once so the framework creates its tables, then apply the scenario SQL with `wrangler d1 execute --local` while the server keeps running — verified order from T11); `global-setup.ts` registers the five users over HTTP, logs each in, stores `tests/e2e/.auth/<name>.json` storage states; fixtures `ownerPage`, `adminPage`, `memberPage`, `outsiderPage`; every page fixture attaches a request listener that fails the test on any request whose URL origin differs from `baseURL`. Required specs: sign-in and dashboard (owner); member lists jobs; member completes `job_in_progress`; mutation appears in activity and in the framework audit trail (`list-audit-events` shows `complete-job` with `caller: "frontend"`); undo restores status and appears as its own operation; undo conflict (complete via UI, reschedule via HTTP as another user, then UI undo shows the conflict error); outsider navigating to `/jobs/job_scheduled` sees not-found, and `GET /_agent-native/actions/get-job?jobId=job_scheduled` as outsider returns 404; member calling `archive-customer` over HTTP gets 403; HTTP call to `complete-job` (caller `http`) and UI click hit the same action (audit rows differ only in `caller`).
+- Integration (`tests/integration`): against a fresh Node SQLite DB (`DATABASE_URL=file:./data/test-integration.db`) migrated with `scripts/migrate-local.mjs` and seeded with SQL: real D1-shaped repositories through `getDbExec()`; CLI surface parity `AGENT_USER_EMAIL=member1@example.invalid AGENT_ORG_ID=org_acme pnpm action complete-job '{"jobId":"job_in_progress"}'` returns the job with status completed and a new `forward` operation exists; `outsider@example.invalid` in `org_other` querying an Acme job returns NOT_FOUND;
+  `member1@example.invalid` claiming `org_other` is AUTHORIZATION before resource access.
+- End-to-end (`tests/e2e`, Playwright, one worker, chromium): server = built Worker under `wrangler dev` started by `scripts/e2e-server.mjs` (reset `.wrangler/state`, apply migrations, spawn wrangler dev, poll `ping`, request `/_agent-native/health` once so the framework creates its tables, then apply the scenario SQL with `wrangler d1 execute --local` while the server keeps running — verified order from T11); `global-setup.ts` registers the five users over HTTP, logs each in, stores `tests/e2e/.auth/<name>.json` storage states; fixtures `ownerPage`, `adminPage`, `memberPage`, `outsiderPage`; every page fixture attaches a request listener that fails the test on any request whose URL origin differs from `baseURL`. Required specs: sign-in and dashboard (owner); member lists jobs; member completes `job_in_progress`; mutation appears in activity and in the framework audit trail (`list-audit-events` shows `complete-job` with `caller: "frontend"`); undo restores status and appears as its own operation; undo conflict (reschedule via UI, complete via HTTP as another user, then UI undo shows the conflict error); outsider navigating to `/jobs/job_scheduled` sees not-found, and `GET /_agent-native/actions/get-job?jobId=job_scheduled` as outsider returns 404; member calling `archive-customer` over HTTP gets 403; HTTP call to `complete-job` (caller `http`) and UI click hit the same action (audit rows differ only in `caller`).
 - Smoke (`scripts/worker-smoke.mjs`): B19.
 - Evals (`evals/*.eval.ts`): `complete-job` prompt → `usesTool("complete-job")`; "show today's jobs" → `usesTool("list-jobs")` and a custom scorer asserting no mutating tool in `toolCalls`; "undo that" → `usesTool("undo-operation")`; all with `skipReason` unless `RUN_MODEL_EVALS=1`.
 
@@ -698,6 +707,9 @@ time through a generated `src/infrastructure/migrations-manifest.ts` (T06), retu
 
 ## B20. CI/CD design
 
+D27 stages this workflow: current checks and Worker build immediately, runtime smoke in T12,
+browser tests in T16, final CI acceptance in T18. Every added capability joins CI immediately.
+
 `ci.yml` (pull_request, push to main): job `verify` — checkout, pnpm setup, `pnpm install
 --frozen-lockfile`, `pnpm check`, `pnpm test:integration`; job `worker` (needs verify) —
 `pnpm build:worker`, upload artifact `worker-bundle` (dist/), generate `.dev.vars` with a random
@@ -714,7 +726,9 @@ artifact `worker-bundle-<sha>` (retention 90 days), `pnpm db:migrate:staging`,
 (QA org only), smoke in staging mode with the QA owner.
 
 `deploy-production.yml` (workflow_dispatch with input `staging_run_id`): environment
-`production` (required reviewers); download artifact `worker-bundle-<sha>` from that run with
+`production` (required reviewers); first require a completed, successful run of this repository’s
+`deploy-staging.yml` on `main`; checkout its head SHA for migrations/configuration/tool versions;
+download artifact `worker-bundle-<sha>` from that run with
 `gh run download`, verify `dist/BUILD_INFO.json.sha` equals the run's head sha; record
 `wrangler d1 time-travel info example-jobs-production --env production --json` into the job
 summary; `pnpm db:migrate:production`; `pnpm deploy:production`; smoke in production mode; on
@@ -752,25 +766,32 @@ boundary. Files: `src/application/ports/external-accounting.ts` (port + `Externa
 map of keys, can be told to fail with `failNextCall(message)` for tests),
 `src/application/use-cases/send-job-to-accounting.ts`, `actions/send-job-to-accounting.ts`.
 
-Use case `sendJobToAccounting(deps, actor, { jobId, expectedVersion? })`:
-1. `requireCapability(actor, "jobs:export")`.
-2. Load job (NOT_FOUND) and customer (NOT_FOUND); `expectedVersion` check (CONFLICT).
-3. Domain precondition through `markSentToAccounting` (T04 messages, now normative): status must
-   be `completed` (INVARIANT "Cannot send to accounting a job that is <status>") and
-   `accountingReference` must be null (INVARIANT "Job was already sent to accounting"). Call the
-   domain function once, after the vendor call, and use a pure precheck helper
-   `assertCanSendToAccounting(job)` exported from `src/domain/job.ts` (add it in T27) before the
-   vendor call so no external call happens for an ineligible job.
-4. Call `deps.accounting.createInvoiceDraft({ idempotencyKey: "job:" + job.id, orgId, customer, job })`.
-   `ExternalSystemError` → `AppError("EXTERNAL", "Accounting system unavailable: <safe message>")`;
-   nothing is written locally.
-5. `next = markSentToAccounting(job, result.externalReference, now)`; operation: kind `forward`,
-   action `send-job-to-accounting`, classification `irreversible`, inverse `null`, payload
-   `{ externalReference, alreadyExisted }`; `deps.jobs.commit({ job: next, expectedVersion: job.version, operation })`.
-   A CONFLICT here means someone changed the job between steps 2 and 5; the vendor already holds
-   the draft under the idempotency key, so the caller retries and step 4 returns
-   `alreadyExisted: true` with the same reference. This is the documented two-step pattern.
-6. Return `{ resource: next, operationId, externalReference }`.
+Use case `sendJobToAccounting(deps, actor, { jobId, expectedVersion? })` (D27):
+1. Require `jobs:export` and scope every read/write to the actor's organization.
+2. Look up an existing `accounting_exports` request by `(org_id, job_id)`. A completed request
+   returns its recorded reference and operation id. A pending request is reconciled using its
+   stored payload, even if the job changed status since the first attempt.
+3. For a new request only, load job and customer, check `expectedVersion`, require a completed
+   unsent job, then atomically insert a pending export guarded on that version/status. Store
+   the immutable vendor input, key `job:<jobId>`, requesting actor and timestamp. No vendor call
+   may precede this durable insert. A competing request reuses the winner's payload and key.
+4. Call the vendor with that exact stored request. A timeout may mean it accepted the draft:
+   keep the request pending and return a safe EXTERNAL error explaining that retry reconciles it.
+5. Record the result and a forward irreversible operation atomically with the job's accounting
+   fields and the export's completed state. Reload the current job and guard its version; keep
+   all unrelated fields (including an intervening archive) unchanged. This reconciliation is
+   permitted for an existing pending request regardless of current job status. If another write
+   wins, leave the durable request pending for retry; never lose the vendor result's identity.
+6. Return `{ resource, operationId, externalReference }`. Replays of completed requests return
+   the recorded result without a second vendor effect or operation.
+
+Add the org-scoped `accounting_exports` table in migration 0002: job id (unique within org),
+idempotency key, immutable request JSON, pending/completed status, external reference, operation
+id, requested-by and timestamps. Implement a port and SQL adapter; scenario reset removes
+export rows before jobs. The mock implements vendor idempotency across repeats and injectable
+failures both before acceptance and after acceptance (lost response). Tests include concurrent
+requests, response loss, restart with a persisted pending request, an archive before local
+commit, no overwrite of newer fields, authorization and cross-org denial.
 
 Action: `needsApproval: true` (the agent must get a human approval for the exact call),
 `mcpTool: true`, audit target job, summary `Sent job <id> to accounting (<reference>)`,

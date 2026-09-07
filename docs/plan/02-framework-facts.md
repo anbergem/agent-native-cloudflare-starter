@@ -225,11 +225,11 @@ NITRO_PRESET=cloudflare_pages NODE_ENV=production pnpm exec agent-native build
 
 ```js
 // fs default-export proxy getter
-/get\((\w+),(\w+)\)\{return (\w+)\("fs\."\+String\((\w+)\)\)\}/
+/get\(([\w$]+),([\w$]+)\)\{return ([\w$]+)\("fs\."\+String\(([\w$]+)\)\)\}/
 // replace with:
 // get(A,P){const __safe={existsSync:()=>false,readdirSync:()=>[],realpathSync:(v)=>v,mkdirSync:()=>undefined,rmSync:()=>undefined,constants:{},promises:{}};if(Object.prototype.hasOwnProperty.call(__safe,P))return __safe[P];return U("fs."+String(P2))}
 // os default-export proxy getter
-/get\((\w+),(\w+)\)\{return (\w+)\("os\."\+String\((\w+)\)\)\}/
+/get\(([\w$]+),([\w$]+)\)\{return ([\w$]+)\("os\."\+String\(([\w$]+)\)\)\}/
 // replace with the same shape and __safe={homedir:()=>"/",tmpdir:()=>"/tmp",platform:()=>"linux",hostname:()=>"worker",EOL:"\n",cpus:()=>[],totalmem:()=>0,freemem:()=>0,release:()=>"",type:()=>"Linux",arch:()=>"x64",userInfo:()=>({username:"worker"})}
 ```
 

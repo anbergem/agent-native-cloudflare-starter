@@ -848,3 +848,26 @@ request body. Any later task that reads `SEED_PASSWORD` (T12's smoke, T16's Play
 fixtures, T19/T20's workflows) needs the same marker.
 
 Resolution: 2026-09-06 — Accepted; the guard opt-out marker is the documented mechanism for scripts outside a request.
+
+## 2026-09-06 Review — authorization, guard enforcement and execution contracts
+
+Expected: archive-customer stays admin-only across surfaces; import boundaries are enforced;
+CI proves incremental progress; external retries reconcile accepted requests; production only
+promotes successful staging.
+Observed: a member could redo an admin archive; multiline imports escaped the regex; CI was
+deferred; T16 requested an invalid transition; T20 never checked staging conclusion; B22 lost
+recovery when a job was archived after vendor acceptance.
+Resolution: maintainer explicitly authorized correction. Added shared history authorization
+and role regression tests, AST import parsing with guard fixtures, initial CI, and D27. Updated
+the affected task contracts for runtime proof, external reconciliation and promotion. T27 and
+T20 implement their corrected contracts when those features are introduced.
+
+## 2026-09-06 Review — minifier identifiers can contain `$`
+
+Expected: both proxy patterns match once on core 0.176.5.
+Observed: the real corrected build named the os thrower `$Ei`; `\w+` excluded `$`, so
+`patch os-default-proxy: expected 1 match, found 0` stopped the build.
+Resolution: match JavaScript identifier characters including `$`, keeping the exact proxy
+shape and one-match requirement. Add executable fixtures for both proxies, missing/duplicate
+patterns and throwing unknown APIs. Bind the idempotency marker to the bundle SHA-256 so a
+stale marker cannot exempt a rebuilt bundle from patching.

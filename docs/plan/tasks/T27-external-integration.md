@@ -1,7 +1,7 @@
 # T27 — External integration port and `send-job-to-accounting`
 
 Goal: one integration-backed command, end to end, proving the pattern an integration-heavy
-application copies: port, mock adapter, two-step write with an idempotency key, irreversible
+application copies: port, mock adapter, durable request and retry reconciliation with an idempotency key, irreversible
 classification, approval gate for the agent.
 
 Depends on: T10. Read: B4 (`markSentToAccounting`), B6 (`jobs:export`), B7 (port), B8 row,
@@ -21,10 +21,12 @@ B10 (migration 0002), B11 (`UPDATE_JOB_VERSIONED`), B22; D26; F5 (`needsApproval
    adapter (T07 wired one that throws `ExternalSystemError("The accounting system is not configured")`)
    and the trivial in-memory fixture mock with it (fresh mock per test).
 4. Authorization: add `jobs:export` to admin and owner (B6) and extend the matrix test.
-5. Use case and action per B22. Unit tests `tests/unit/application/send-job-to-accounting.test.ts`:
+5. Use case and action per B22 as revised by D27: add the durable `accounting_exports`
+   port/adapter/schema and immutable pending request before any vendor call. Reconciliation
+   must succeed after an intervening archive without overwriting it. Unit tests `tests/unit/application/send-job-to-accounting.test.ts`:
    success (reference `ACC-<id>`, version + 1, operation `irreversible` with `inverse: null`,
-   payload); member → AUTHORIZATION; job not completed → INVARIANT; already sent → INVARIANT;
-   other org → NOT_FOUND; adapter failure → EXTERNAL and no local change, no operation;
+   payload); member → AUTHORIZATION; job not completed → INVARIANT; already sent → replay the completed request with no duplicate effect;
+   other org → NOT_FOUND; adapter failure → EXTERNAL, a durable pending request and no falsely completed operation;
    CONFLICT on the local commit followed by a retry returns the same reference with
    `alreadyExisted: true` (drive it by mutating the in-memory job between steps using a
    `beforeCommit` hook on the in-memory repository — add that hook to the fixture); undo of this
@@ -33,7 +35,7 @@ B10 (migration 0002), B11 (`UPDATE_JOB_VERSIONED`), B22; D26; F5 (`needsApproval
    action as irreversible and approval-gated (T03 already reserved the line).
 7. Integration check in `scripts/test-integration.mjs`: as `admin@example.invalid`/`org_acme`,
    `pnpm action send-job-to-accounting '{"jobId":"job_completed"}'` returns
-   `externalReference: "ACC-job_completed"`; a second call returns INVARIANT.
+   `externalReference: "ACC-job_completed"`; a second call returns the recorded result with no second effect.
 8. Verify on the Node dev server that the framework pauses the agent on this action when a
    provider key is available (optional); at minimum verify with curl that the HTTP call as admin
    succeeds and as member returns 403.
@@ -55,3 +57,6 @@ pnpm check
 pnpm test:integration
 pnpm db:reset    # applies 0001 and 0002 to the local SQLite file
 ```
+
+Additional acceptance (D27): exercise response loss after acceptance, concurrent requests,
+restart/retry from persisted intent, archive-before-commit, and preserved newer fields.
