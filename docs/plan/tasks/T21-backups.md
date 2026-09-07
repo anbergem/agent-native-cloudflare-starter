@@ -47,6 +47,6 @@ Depends on: T20. Read: F10; B20 (backup); D23.
 ```bash
 pnpm check
 bash -n scripts/backup-d1.sh && bash -n scripts/restore-d1-check.sh
-npx actionlint@latest .github/workflows/backup-d1.yml
+pnpm lint:workflows
 pnpm build:worker && pnpm db:reset && pnpm exec wrangler d1 export example-jobs-local --local --output /tmp/local.sql && bash scripts/restore-d1-check.sh /tmp/local.sql
 ```

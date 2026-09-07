@@ -23,7 +23,7 @@ Depends on: T18. Read: F10; B13, B19, B20; D11, D21.
    Environment for Wrangler steps: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` from
    secrets; `SEED_PASSWORD` from secrets; `STAGING_URL` from environment variables. Append the
    deployed sha and the smoke result to `$GITHUB_STEP_SUMMARY`.
-2. Validate without cloud access: `npx actionlint@latest` passes; `pnpm build:worker && pnpm
+2. Validate without cloud access: `pnpm lint:workflows` passes; `pnpm build:worker && pnpm
    exec wrangler deploy --env staging --dry-run --outdir /tmp/wrangler-dry` succeeds (if the
    dry run rejects the `REPLACE_ME` ids, use a temporary copy of the config with dummy UUIDs
    and say so in the PR).
@@ -40,6 +40,6 @@ Depends on: T18. Read: F10; B13, B19, B20; D11, D21.
 
 ```bash
 pnpm check
-npx actionlint@latest .github/workflows/deploy-staging.yml
+pnpm lint:workflows
 ```
 plus the dry-run transcript.

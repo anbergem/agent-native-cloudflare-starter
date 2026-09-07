@@ -45,6 +45,6 @@ Depends on: T19. Read: F10; B19, B20; D21.
 
 ```bash
 pnpm check
-npx actionlint@latest .github/workflows/deploy-production.yml
+pnpm lint:workflows
 ```
 plus the dry-run transcript.
