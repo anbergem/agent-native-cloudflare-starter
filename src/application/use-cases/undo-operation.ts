@@ -44,7 +44,11 @@ import {
 import type { Actor } from "../actor";
 import { requireCapability } from "../authorization";
 import { AppError } from "../errors";
-import { mayUndo, requireHistoryPermission } from "../history-policy";
+import {
+  mayUndo,
+  reopensCompletedJob,
+  requireHistoryPermission,
+} from "../history-policy";
 import type { Dependencies } from "../ports";
 import { applyDomain, type UndoRedoResult } from "./command";
 
@@ -207,6 +211,17 @@ export async function undoOperation(
   if (!job) throw new AppError("NOT_FOUND", "Job not found");
   assertUndoable(op, job.version);
   requireHistoryPermission(mayUndo(actor, op));
+  const requireNoAccountingExport = reopensCompletedJob(op);
+  if (
+    requireNoAccountingExport &&
+    (job.accountingReference !== null ||
+      (await deps.accountingExports.getByJobId(actor.orgId, job.id)))
+  ) {
+    throw new AppError(
+      "INVARIANT",
+      "A job with an accounting export cannot be reopened",
+    );
+  }
 
   const now = deps.clock.now();
   const restored = applyDomain(() => applyJobInverse(op.inverse, job, now));
@@ -223,6 +238,7 @@ export async function undoOperation(
 
   await deps.jobs.commit({
     job: restored,
+    requireNoAccountingExport,
     expectedVersion: job.version,
     operation: undoOp,
     markUndone: op.id,

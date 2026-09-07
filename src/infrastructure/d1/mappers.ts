@@ -15,6 +15,8 @@
  * history, it just cannot be undone.
  */
 
+import type { AccountingExport } from "../../application/ports";
+import type { AccountingInvoiceDraft } from "../../application/ports/external-accounting";
 import type {
   Customer,
   CustomerStatus,
@@ -153,14 +155,34 @@ export function toJob(row: Row): Job {
     assignedTo: nullableText(row, "assigned_to"),
     completedAt: nullableText(row, "completed_at"),
     archivedAt: nullableText(row, "archived_at"),
-    // Migration 0002 (T27) adds the two columns; until then no row has them
-    // and `sql.ts` does not select them.
-    accountingReference: null,
-    accountingSentAt: null,
+    accountingReference: nullableText(row, "accounting_reference"),
+    accountingSentAt: nullableText(row, "accounting_sent_at"),
     version: integer(row, "version"),
     createdBy: text(row, "created_by"),
     createdAt: text(row, "created_at"),
     updatedAt: text(row, "updated_at"),
+  };
+}
+
+export function toAccountingExport(row: Row): AccountingExport {
+  const raw = text(row, "request_json");
+  let request: unknown;
+  try {
+    request = JSON.parse(raw);
+  } catch {
+    throw new Error("database row: accounting export request_json is invalid");
+  }
+  return {
+    orgId: text(row, "org_id"),
+    jobId: text(row, "job_id"),
+    idempotencyKey: text(row, "idempotency_key"),
+    request: request as AccountingInvoiceDraft,
+    status: enumeration(row, "status", ["pending", "completed"] as const),
+    externalReference: nullableText(row, "external_reference"),
+    operationId: nullableText(row, "operation_id"),
+    requestedBy: text(row, "requested_by"),
+    requestedAt: text(row, "requested_at"),
+    completedAt: nullableText(row, "completed_at"),
   };
 }
 

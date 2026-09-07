@@ -12,7 +12,7 @@ import type { Job } from "../../domain";
 import type { Actor } from "../actor";
 import { requireCapability } from "../authorization";
 import { AppError } from "../errors";
-import type { Dependencies } from "../ports";
+import type { AccountingExportStatus, Dependencies } from "../ports";
 
 export interface GetJobInput {
   jobId: string;
@@ -20,6 +20,8 @@ export interface GetJobInput {
 
 export interface GetJobResult {
   job: Job;
+  /** Pending exports remain retryable even after the job is archived. */
+  accountingExportStatus: AccountingExportStatus | null;
   /** `null` only when the customer row is gone, which the schema's foreign
    * key makes impossible in the database; the job stays readable either way
    * rather than a missing name turning into a missing job. */
@@ -37,5 +39,13 @@ export async function getJob(
   if (!job) throw new AppError("NOT_FOUND", "Job not found");
 
   const customer = await deps.customers.getById(actor.orgId, job.customerId);
-  return { job, customerName: customer?.name ?? null };
+  const accountingExport = await deps.accountingExports.getByJobId(
+    actor.orgId,
+    job.id,
+  );
+  return {
+    job,
+    customerName: customer?.name ?? null,
+    accountingExportStatus: accountingExport?.status ?? null,
+  };
 }

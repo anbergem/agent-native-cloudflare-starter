@@ -22,14 +22,14 @@
 import { getDbExec } from "@agent-native/core/db";
 
 import type { Dependencies } from "../application/ports";
-import type { ExternalAccountingSystem } from "../application/ports/external-accounting";
-import { ExternalSystemError } from "../application/ports/external-accounting";
+import { createAccountingExportsRepository } from "./d1/accounting-exports-repository";
 import type { DbExecLike } from "./d1/atomic";
 import { createCustomersRepository } from "./d1/customers-repository";
 import { createIdempotencyStore } from "./d1/idempotency-store";
 import { createJobsRepository } from "./d1/jobs-repository";
 import { createMembershipReader } from "./d1/membership-reader";
 import { createOperationsRepository } from "./d1/operations-repository";
+import { createMockAccountingSystem } from "./mock/mock-accounting";
 import { randomIdGenerator } from "./random-ids";
 import { systemClock } from "./system-clock";
 
@@ -50,11 +50,7 @@ function currentDbExec(): DbExecLike {
  * loudly and in the port's own error type. Nothing in the application calls it
  * before T27 adds `send-job-to-accounting`.
  */
-const unconfiguredAccounting: ExternalAccountingSystem = {
-  createInvoiceDraft: async () => {
-    throw new ExternalSystemError("The accounting system is not configured");
-  },
-};
+const accounting = createMockAccountingSystem();
 
 let dependencies: Dependencies | undefined;
 
@@ -67,7 +63,8 @@ export function getDependencies(): Dependencies {
     jobs: createJobsRepository(currentDbExec),
     operations: createOperationsRepository(currentDbExec),
     idempotency: createIdempotencyStore(currentDbExec),
-    accounting: unconfiguredAccounting,
+    accounting,
+    accountingExports: createAccountingExportsRepository(currentDbExec),
   };
   return dependencies;
 }

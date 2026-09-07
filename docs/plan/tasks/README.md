@@ -18,10 +18,10 @@ T14/T15/T16 → T17/T18 → delivery/docs/final verification. CI grows with each
 | T09 | Command use cases and actions | T08 | done (PR #11) |
 | T10 | Undo and redo | T09 | done (PR #12) |
 | T11 | Seed scenario and seed script | T07 | done (PR #13) |
-| T12 | Worker smoke script | T10, T11 | todo |
-| T13 | Integration tests through the CLI surface | T10, T11 | todo |
-| T14 | User interface | T10, T27 | todo |
-| T15 | Internationalization | T14 | todo |
+| T12 | Worker smoke script | T10, T11 | done (T12/T13/T27 implementation milestone) |
+| T13 | Integration tests through the CLI surface | T10, T11 | done (T12/T13/T27 implementation milestone) |
+| T14 | User interface | T10, T27 | in-progress (Codex) |
+| T15 | Internationalization | T14 | in-progress (Codex) |
 | T16 | Playwright end-to-end suite | T12, T15 | todo |
 | T17 | Agent evals | T10, T11 | todo |
 | T18 | CI workflow | T13, T16, T17 | in-progress (baseline introduced by review corrections) |
@@ -33,7 +33,7 @@ T14/T15/T16 → T17/T18 → delivery/docs/final verification. CI grows with each
 | T24 | Bootstrap checklist and rename script | T23 | todo |
 | T25 | Norwegian Bokmål upstream change (prepared for maintainer review) | T15 | todo |
 | T26 | Final verification and report | T24, T25 | todo |
-| T27 | External integration port and `send-job-to-accounting` | T10 | todo |
+| T27 | External integration port and `send-job-to-accounting` | T10 | done (T12/T13/T27 implementation milestone) |
 
 Parallelism: T04 and T05 can run in parallel with T02/T03. T11 can run in parallel with
 T08–T10. T27 follows the Worker/CLI proof (T12/T13) and precedes T14. T14/T15 can run in parallel with T12/T13. T25 can run any time after T15.

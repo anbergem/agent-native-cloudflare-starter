@@ -271,3 +271,28 @@ export function markSentToAccounting(
     updatedAt: now,
   };
 }
+
+/** Finishes a durable pending export. Unlike the initial eligibility check,
+ * reconciliation remains valid after the job was archived. */
+export function reconcileAccountingExport(
+  job: Job,
+  reference: string,
+  now: string,
+): Job {
+  if (
+    job.accountingReference !== null &&
+    job.accountingReference !== reference
+  ) {
+    throw new DomainError(
+      "INVARIANT",
+      "Job was sent to a different accounting reference",
+    );
+  }
+  return {
+    ...job,
+    accountingReference: reference,
+    accountingSentAt: job.accountingSentAt ?? now,
+    version: job.version + 1,
+    updatedAt: now,
+  };
+}

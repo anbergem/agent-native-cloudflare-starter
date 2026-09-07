@@ -25,11 +25,13 @@ import { mapRows, operationInsertArgs, toJob } from "./mappers";
 import {
   INSERT_JOB_IF_ACTIVE_CUSTOMER,
   INSERT_OPERATION_IF_VERSION,
+  INSERT_OPERATION_IF_VERSION_WITHOUT_ACCOUNTING_EXPORT,
   MARK_OPERATION_UNDONE,
   SELECT_JOB_BY_ID,
   SELECT_JOBS,
   SELECT_JOBS_PARTS,
   UPDATE_JOB_VERSIONED,
+  UPDATE_JOB_VERSIONED_WITHOUT_ACCOUNTING_EXPORT,
 } from "./sql";
 
 const CONFLICT_MESSAGE = "The record was changed by someone else";
@@ -47,6 +49,8 @@ function jobInsertArgs(job: Job): unknown[] {
     job.assignedTo,
     job.completedAt,
     job.archivedAt,
+    job.accountingReference,
+    job.accountingSentAt,
     job.version,
     job.createdBy,
     job.createdAt,
@@ -123,34 +127,50 @@ export function createJobsRepository(source: DbExecSource): JobRepository {
       }
     },
 
-    commit: async ({ job, expectedVersion, operation, markUndone }) => {
+    commit: async ({
+      job,
+      expectedVersion,
+      operation,
+      markUndone,
+      requireNoAccountingExport,
+    }) => {
       // The audit row goes first, guarded on the version the caller read; the
       // update carries the same predicate. Both statements see the same
       // pre-image inside one transaction, so either both apply or neither
       // does, whatever version the update would have written.
       const statements: Statement[] = [
         {
-          sql: INSERT_OPERATION_IF_VERSION,
+          sql: requireNoAccountingExport
+            ? INSERT_OPERATION_IF_VERSION_WITHOUT_ACCOUNTING_EXPORT
+            : INSERT_OPERATION_IF_VERSION,
           args: [
             ...operationInsertArgs(operation),
             job.orgId,
             job.id,
             expectedVersion,
+            ...(requireNoAccountingExport ? [job.orgId, job.id] : []),
           ],
         },
         {
-          sql: UPDATE_JOB_VERSIONED,
+          sql: requireNoAccountingExport
+            ? UPDATE_JOB_VERSIONED_WITHOUT_ACCOUNTING_EXPORT
+            : UPDATE_JOB_VERSIONED,
           args: [
             job.status,
             job.scheduledAt,
             job.assignedTo,
             job.completedAt,
             job.archivedAt,
+            job.accountingReference,
+            job.accountingSentAt,
             job.version,
             job.updatedAt,
             job.orgId,
             job.id,
             expectedVersion,
+            ...(requireNoAccountingExport
+              ? [job.orgId, job.id, operation.orgId, operation.id]
+              : []),
           ],
         },
       ];
