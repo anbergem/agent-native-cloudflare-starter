@@ -34,9 +34,13 @@ jobs:
         run: '[[ "$STAGING_RUN_ID" =~ ^[1-9][0-9]*$ ]]'
       - name: Initialize temporary paths
         run: |
-          echo "STAGING_RUN_JSON=$RUNNER_TEMP/staging-run.json" >> "$GITHUB_ENV"
-          echo "CI_RUN_JSON=$RUNNER_TEMP/ci-run.json" >> "$GITHUB_ENV"
-          echo "DEPLOYMENT_MANIFEST=$RUNNER_TEMP/deployment-manifest/deployment-manifest.json" >> "$GITHUB_ENV"
+          {
+            echo "STAGING_RUN_JSON=$RUNNER_TEMP/staging-run.json"
+            echo "CI_RUN_JSON=$RUNNER_TEMP/ci-run.json"
+            echo "DEPLOYMENT_MANIFEST=$RUNNER_TEMP/deployment-manifest/deployment-manifest.json"
+            echo "TIME_TRAVEL_JSON=$RUNNER_TEMP/time-travel.json"
+            echo "PREVIOUS_DEPLOYMENTS_JSON=$RUNNER_TEMP/previous-deployments.json"
+          } >> "$GITHUB_ENV"
       - name: Read staging run metadata
         run: gh api "repos/$GITHUB_REPOSITORY/actions/runs/$STAGING_RUN_ID" > "$STAGING_RUN_JSON"
       - uses: actions/checkout@v4
@@ -48,6 +52,7 @@ jobs:
           --name deployment-manifest --dir "$RUNNER_TEMP/deployment-manifest"
       - name: Read source CI metadata
         run: |
+          source_ci_run_id=""
           source_ci_run_id="$(node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync(process.env.DEPLOYMENT_MANIFEST,"utf8")); if (!/^[1-9][0-9]*$/.test(String(p.sourceCiRunId))) process.exit(1); process.stdout.write(String(p.sourceCiRunId))')"
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$source_ci_run_id" > "$CI_RUN_JSON"
       - name: Validate trusted staging run
@@ -73,29 +78,44 @@ jobs:
         env:
           ARTIFACT_DIR: dist
           STAGING_SHA: ${{ steps.staging.outputs.sha }}
-          CHECKOUT_SHA: ${{ github.sha }}
         run: |
-          export CHECKOUT_SHA="$(git rev-parse HEAD)"
+          CHECKOUT_SHA="$(git rev-parse HEAD)"
+          export CHECKOUT_SHA
           node scripts/verify-promotion-artifact.mjs
       - name: Record Time Travel bookmark
-        id: bookmark
         run: |
-          bookmark="$(pnpm exec wrangler d1 time-travel info example-jobs-production --env production --json)"
-          echo "$bookmark" > "$RUNNER_TEMP/time-travel.json"
-          echo '### Pre-deploy D1 Time Travel bookmark' >> "$GITHUB_STEP_SUMMARY"
-          echo '```json' >> "$GITHUB_STEP_SUMMARY"
-          cat "$RUNNER_TEMP/time-travel.json" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          pnpm exec wrangler d1 time-travel info example-jobs-production \
+            --env production --json > "$TIME_TRAVEL_JSON"
+          {
+            echo '### Pre-deploy D1 Time Travel bookmark'
+            echo '```json'
+            cat "$TIME_TRAVEL_JSON"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Record previous deployment
-        run: pnpm exec wrangler deployments list --env production --json > "$RUNNER_TEMP/previous-deployments.json"
+        run: pnpm exec wrangler deployments list --env production --json > "$PREVIOUS_DEPLOYMENTS_JSON"
       - run: pnpm db:migrate:production
       - run: pnpm deploy:production
       - run: node scripts/worker-smoke.mjs --base-url "$PRODUCTION_URL" --mode production
       - name: Record rollback guidance
         if: failure()
         run: |
-          echo '### Rollback guidance' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Review the pre-deploy bookmark above.' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Previous deployment inventory:' >> "$GITHUB_STEP_SUMMARY"
-          cat "$RUNNER_TEMP/previous-deployments.json" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
-          echo '\`pnpm exec wrangler rollback --env production\`' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo '### Rollback guidance'
+            echo 'Pre-deploy D1 Time Travel bookmark:'
+            echo '```json'
+            cat "$TIME_TRAVEL_JSON" 2>/dev/null || echo '{}'
+            echo '```'
+            echo 'Deployments before this promotion (the first id is the one to restore):'
+            echo '```json'
+            cat "$PREVIOUS_DEPLOYMENTS_JSON" 2>/dev/null || echo '[]'
+            echo '```'
+            echo 'Roll the Worker back with:'
+            echo '```bash'
+            echo 'pnpm exec wrangler rollback <version-id> --env production'
+            echo '```'
+            echo 'Restore D1 only if a migration corrupted data:'
+            echo '```bash'
+            echo 'pnpm exec wrangler d1 time-travel restore example-jobs-production --bookmark <bookmark>'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,5 +1,10 @@
 # Framework upgrade playbook
 
+Renovate opens the pull request — framework packages arrive grouped as "agent-native framework"
+with the `framework-upgrade` label, held for three days after release, and never automerged
+(`renovate.json`, D22). This is what a human does with that pull request. Work through it in
+order; every step is a gate, not a suggestion.
+
 1. Read the Agent-Native and Wrangler release notes for every proposed version. Identify changes to actions, authentication, database drivers, Worker output, and deployment commands before editing dependencies.
 2. Update the exact `@agent-native/core` and `@agent-native/toolkit` pins. Keep related framework packages in one reviewed change. Update Wrangler separately unless the versions must move together for compatibility.
 3. Run `pnpm install` and review both `package.json` and `pnpm-lock.yaml`. Do not discard unrelated lockfile changes without understanding their source.

@@ -21,6 +21,7 @@
     "db:migrate:production": "wrangler d1 migrations apply example-jobs-production --remote --env production",
     "deploy:staging": "wrangler deploy --env staging",
     "deploy:production": "wrangler deploy --env production",
+    "backup:d1": "bash scripts/backup-d1.sh",
     "start": "agent-native start",
     "lint": "oxlint . && oxfmt --check .",
     "typecheck": "agent-native typecheck",

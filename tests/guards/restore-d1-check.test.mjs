@@ -24,11 +24,15 @@ test("restore check imports into scratch state and reports actual table counts",
         "INSERT INTO d1_migrations VALUES (1, '0001_init.sql');",
       ].join("\n"),
     );
-    const output = execFileSync("bash", ["scripts/restore-d1-check.sh", backup], {
-      cwd: root,
-      encoding: "utf8",
-      env: { ...process.env, RESTORE_REPORT: report },
-    });
+    const output = execFileSync(
+      "bash",
+      ["scripts/restore-d1-check.sh", backup],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: { ...process.env, RESTORE_REPORT: report },
+      },
+    );
     for (const table of ["customers", "jobs", "operations", "d1_migrations"])
       assert.match(output, new RegExp(`Count: ${table}`));
     const restoredOnes = output.match(/row_count[^\n]*1/g) ?? [];

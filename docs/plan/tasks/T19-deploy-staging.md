@@ -12,7 +12,10 @@ Depends on: T18. Read: F10; B13, B19, B20; D11, D21.
    branches `main`) guarded by `if: github.event.workflow_run.conclusion == 'success'`, plus
    `workflow_dispatch`; job `deploy` with `environment: staging`, `permissions: { contents: read,
    actions: read }`; steps: checkout at `${{ github.event.workflow_run.head_sha || github.sha }}`,
-   pnpm/node setup, `pnpm install --frozen-lockfile`, `pnpm build:worker`, upload artifact
+   pnpm/node setup, validate that this exact SHA has a completed, successful `ci.yml` run of this
+   repository on `main` (a manual dispatch looks the run up by `head_sha`), write the immutable
+   `deployment-manifest` artifact `{ repository, sha, sourceCiRunId }` that T20 promotes from,
+   `pnpm install --frozen-lockfile`, `pnpm build:worker`, upload artifact
    `worker-bundle-${{ <sha> }}` with `retention-days: 90`, `pnpm db:migrate:staging`,
    `pnpm deploy:staging`, seed reset
    `node scripts/seed.mjs --target d1-remote --env staging --reset --base-url ${{ vars.STAGING_URL }}`,

@@ -39,8 +39,10 @@ jobs:
           cache: pnpm
       - name: Initialize temporary paths
         run: |
-          echo "CI_RUN_JSON=$RUNNER_TEMP/ci-run.json" >> "$GITHUB_ENV"
-          echo "DEPLOYMENT_MANIFEST=$RUNNER_TEMP/deployment-manifest.json" >> "$GITHUB_ENV"
+          {
+            echo "CI_RUN_JSON=$RUNNER_TEMP/ci-run.json"
+            echo "DEPLOYMENT_MANIFEST=$RUNNER_TEMP/deployment-manifest.json"
+          } >> "$GITHUB_ENV"
       - name: Read triggering CI run
         if: github.event_name == 'workflow_run'
         env:
@@ -87,7 +89,14 @@ jobs:
           --expect-org-id org_acme
       - name: Record deployment
         if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          SOURCE_CI_RUN_ID: ${{ steps.ci.outputs.run_id }}
         run: |
-          echo "### Staging deployment" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Commit: \`$DEPLOY_SHA\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Smoke: ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Staging deployment"
+            echo "- Commit: \`$DEPLOY_SHA\`"
+            echo "- Source CI run: \`$SOURCE_CI_RUN_ID\`"
+            echo "- Promotion artifact: \`worker-bundle-$DEPLOY_SHA\`"
+            echo "- Deploy and smoke: $JOB_STATUS"
+          } >> "$GITHUB_STEP_SUMMARY"
