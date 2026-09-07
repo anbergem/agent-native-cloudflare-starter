@@ -734,18 +734,29 @@ developer file. Concurrency group per ref. Timeouts 20 minutes for `verify`, 30 
 `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `SEED_PASSWORD`; steps: build worker, upload
 artifact `worker-bundle-<sha>` (retention 90 days), `pnpm db:migrate:staging`,
 `pnpm deploy:staging`, `node scripts/seed.mjs --target d1-remote --env staging --reset`
-(QA org only), smoke in staging mode with the QA owner.
+(QA org only), smoke in staging mode with the QA owner. The deployed SHA is proven before the
+build: the run validates that this exact commit has a completed, successful `ci.yml` run of this
+repository on `main`, and uploads an immutable `deployment-manifest` artifact
+(`{ repository, sha, sourceCiRunId }`) which is what production promotes from — the staging
+workflow-run `head_sha` alone is not promotion provenance (T19/T20).
 
-`deploy-production.yml` (workflow_dispatch with input `staging_run_id`): environment
-`production` (required reviewers); first require a completed, successful run of this repository’s
-`deploy-staging.yml` on `main`; checkout its head SHA for migrations/configuration/tool versions;
-download artifact `worker-bundle-<sha>` from that run with
-`gh run download`, verify `dist/BUILD_INFO.json.sha` equals the run's head sha; record
+`deploy-production.yml` (workflow_dispatch with inputs `staging_run_id` and `confirm`):
+environment `production` (required reviewers); first require a completed, successful run of this
+repository’s `deploy-staging.yml` on `main`; read the deployed SHA and its source CI run id from
+that run's `deployment-manifest` artifact and re-validate both; checkout that SHA for
+migrations/configuration/tool versions; download artifact `worker-bundle-<sha>` from that run
+with `gh run download`, verify `dist/BUILD_INFO.json.sha` equals it, that `git rev-parse HEAD`
+equals it, and that `dist/_worker.js/PATCHED.json` matches the SHA-256 of the downloaded
+`index.js` (a missing marker fails the promotion); record
 `wrangler d1 time-travel info example-jobs-production --env production --json` into the job
 summary; `pnpm db:migrate:production`; `pnpm deploy:production`; smoke in production mode; on
 failure print rollback instructions (`wrangler rollback --env production`) into the summary.
+Promotions are serialised by a non-cancelling `deploy-production` concurrency group, and inputs
+reach shell code only through environment variables after validation.
 
-`backup-d1.yml` (schedule daily 03:00 UTC + dispatch): environment `production`; `scripts/backup-d1.sh`
+`backup-d1.yml` (schedule daily 03:00 UTC + dispatch): environment `production-backup` — no
+required reviewers, so the schedule runs unattended, with an account-scoped `D1 Read` token
+(T21 supersedes the `production` environment this section first named); `scripts/backup-d1.sh`
 exports `example-jobs-production`, gzip, optional `age` encryption when `BACKUP_AGE_RECIPIENT`
 is set, upload to S3-compatible storage when `BACKUP_S3_BUCKET`, `BACKUP_S3_ENDPOINT`,
 `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY` are set, else upload as artifact with

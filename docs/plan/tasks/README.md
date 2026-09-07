@@ -25,10 +25,10 @@ T14/T15/T16 → T17/T18 → delivery/docs/final verification. CI grows with each
 | T16 | Playwright end-to-end suite | T12, T15 | done (PR #17) |
 | T17 | Agent evals | T10, T11 | done (PR #17) |
 | T18 | CI workflow | T13, T16, T17 | done (PR #17) |
-| T19 | Staging deployment workflow | T18 | todo |
-| T20 | Production deployment workflow | T19 | todo |
-| T21 | Backups and restore | T20 | todo |
-| T22 | Renovate, upgrade playbook, repository settings | T18 | todo |
+| T19 | Staging deployment workflow | T18 | done (PR #16) |
+| T20 | Production deployment workflow | T19 | done (PR #16) |
+| T21 | Backups and restore | T20 | done (PR #16) |
+| T22 | Renovate, upgrade playbook, repository settings | T18 | done (PR #16) |
 | T23 | Documentation set | T21, T22 | todo |
 | T24 | Bootstrap checklist and rename script | T23 | todo |
 | T25 | Norwegian Bokmål upstream change (prepared for maintainer review) | T15 | todo |

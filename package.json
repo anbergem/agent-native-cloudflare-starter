@@ -21,6 +21,7 @@
     "db:migrate:production": "wrangler d1 migrations apply example-jobs-production --remote --env production",
     "deploy:staging": "wrangler deploy --env staging",
     "deploy:production": "wrangler deploy --env production",
+    "backup:d1": "bash scripts/backup-d1.sh",
     "start": "agent-native start",
     "lint": "oxlint . && oxfmt --check .",
     "typecheck": "agent-native typecheck",
@@ -37,7 +38,8 @@
     "test:guards": "node --test tests/guards/*.test.mjs",
     "smoke": "node scripts/worker-smoke.mjs",
     "verify:worker": "node scripts/verify-worker.mjs",
-    "guard:i18n": "node scripts/check-i18n-catalogs.mjs"
+    "guard:i18n": "node scripts/check-i18n-catalogs.mjs",
+    "lint:workflows": "github-actionlint .github/workflows/*.yml"
   },
   "dependencies": {
     "@agent-native/core": "0.176.5",
@@ -107,6 +109,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "embla-carousel-react": "^8.6.0",
+    "github-actionlint": "1.7.12",
     "input-otp": "^1.4.2",
     "next-themes": "^0.4.6",
     "oxfmt": "0.66.0",

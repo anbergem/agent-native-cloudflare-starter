@@ -12,13 +12,18 @@ Depends on: T19. Read: F10; B19, B20; D21.
    `environment: production` (required reviewers are configured by the maintainer), permissions
    `contents: read, actions: read`; steps: verify `inputs.confirm == 'deploy'`; validate `staging_run_id` as digits; query
    that run through the GitHub API and require workflow path `deploy-staging.yml`, head branch
-   `main`, this repository, status `completed`, and conclusion `success`. Resolve its head SHA
-   and checkout that SHA (including migrations, lockfile and Wrangler config);
+   `main`, this repository, status `completed`, and conclusion `success`. Resolve the deployed
+   SHA from that run's `deployment-manifest` artifact, which T19 writes, rather than from the
+   workflow-run `head_sha`, which can describe the workflow's default-branch context instead of
+   the deployed commit; re-validate that the manifest names this repository and a completed,
+   successful `ci.yml` run for that exact SHA. Checkout that SHA (including migrations, lockfile
+   and Wrangler config);
    pnpm/node setup; install (needed for wrangler); download the artifact:
-   `gh run download ${{ inputs.staging_run_id }} --name worker-bundle-<sha> --dir dist`
-   where `<sha>` is resolved with `gh run view ${{ inputs.staging_run_id }} --json headSha -q .headSha`;
-   verify `jq -r .sha dist/BUILD_INFO.json` equals that sha and equals the checked-out commit
-   (`git rev-parse HEAD`), else fail; record
+   `gh run download "$STAGING_RUN_ID" --name worker-bundle-<sha> --dir dist` where `<sha>` is the
+   manifest SHA;
+   verify that `dist/BUILD_INFO.json`'s `sha` equals that sha and equals the checked-out commit
+   (`git rev-parse HEAD`), and that `dist/_worker.js/PATCHED.json` matches the SHA-256 of the
+   downloaded `dist/_worker.js/index.js`, else fail; record
    `pnpm exec wrangler d1 time-travel info example-jobs-production --env production --json`
    into `$GITHUB_STEP_SUMMARY`; `pnpm db:migrate:production`; `pnpm deploy:production`;
    `node scripts/worker-smoke.mjs --base-url ${{ vars.PRODUCTION_URL }} --mode production`;
@@ -40,6 +45,6 @@ Depends on: T19. Read: F10; B19, B20; D21.
 
 ```bash
 pnpm check
-npx actionlint@latest .github/workflows/deploy-production.yml
+pnpm lint:workflows
 ```
 plus the dry-run transcript.

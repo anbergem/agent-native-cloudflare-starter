@@ -50,6 +50,10 @@ data/.sessions.json
 # Cloudflare / Wrangler
 .wrangler/
 
+# Database backups and restore reports (T21) — never commit customer or user rows
+backups/
+restore-report-*.log
+
 # Tests
 tests/e2e/.auth/
 test-results/

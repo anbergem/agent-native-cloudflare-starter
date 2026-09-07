@@ -1195,3 +1195,128 @@ Proposed handling: kept the shorter path the scaffold established and recorded b
 together with the shape of `useOrgRole()`'s result (`canManageOrg`) that the role-aware UI uses.
 
 Resolution: 2026-09-07 — F4 updated.
+
+## 2026-09-07 T19/T20 — a staging workflow-run's `head_sha` is not promotion provenance
+
+Expected (plan reference): `docs/plan/tasks/T20-deploy-production.md` step 1 resolved the
+bundle to promote with `gh run view <staging_run_id> --json headSha -q .headSha`, and
+`docs/plan/03-blueprint.md` B20 said to "verify `dist/BUILD_INFO.json.sha` equals the run's head
+sha".
+
+Observed: for a `workflow_run`-triggered run, the run's own `head_sha` describes the context the
+workflow file was loaded from, not necessarily the commit the triggering CI run verified. Two
+runs can therefore report the same `head_sha` while having deployed different commits, so a
+promotion keyed on it can check out configuration and migrations from one commit and deploy a
+bundle built from another. D27 requires the promotion to verify the artifact SHA and to check
+out that SHA for migrations and configuration; `head_sha` cannot carry that guarantee on its
+own.
+
+Impact: T20 step 1's artifact-name and SHA-verification instructions, and the matching B20
+paragraph.
+
+Proposed handling: `deploy-staging.yml` proves the SHA once, at the moment it deploys — it
+requires a completed, successful `ci.yml` run of this repository on `main` for that exact SHA
+(`scripts/validate-ci-run.mjs`) and uploads an immutable `deployment-manifest` artifact
+`{ repository, sha, sourceCiRunId }` (`scripts/write-deployment-manifest.mjs`).
+`deploy-production.yml` promotes from that manifest: `scripts/validate-staging-run.mjs`
+re-validates the staging run (workflow path, repository, branch, status, conclusion), the
+manifest's repository and SHA, and that the manifest names the CI run that actually verified
+that SHA, and only then is the SHA checked out and its `worker-bundle-<sha>` downloaded.
+`scripts/verify-promotion-artifact.mjs` then requires `BUILD_INFO.json.sha`, `git rev-parse
+HEAD` and the manifest SHA to agree, and `dist/_worker.js/PATCHED.json` to match the SHA-256 of
+the downloaded `dist/_worker.js/index.js`, which also satisfies T20 step 2's "fail if
+`PATCHED.json` is missing". T19 step 1, T20 step 1 and B20 were updated in the same change; the
+decisions in D21 and D27 are unchanged.
+
+Resolution: 2026-09-07 — implemented as described; the promotion validators are unit-tested in
+`tests/guards/deployment-validation.test.mjs` (failed run, unrelated workflow, wrong branch,
+wrong repository, incomplete run, wrong SHA, mismatched manifest, tampered bundle hash).
+
+## 2026-09-07 T21 — the backup workflow needs its own environment, not `production`
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B20 said `backup-d1.yml` uses
+`environment: production`, while `docs/plan/tasks/T21-backups.md` step 2 said
+`environment: production-backup` (no required reviewers, account-scoped `D1 Read` token).
+
+Observed: the two are mutually exclusive. The `production` environment carries required
+reviewers (D21), and a required reviewer blocks a scheduled job until a human approves it, so a
+nightly backup on `environment: production` would sit waiting for approval every night and the
+schedule would never run unattended.
+
+Impact: B20's backup paragraph.
+
+Proposed handling: keep T21's `production-backup` environment, which is the newer and more
+specific instruction, and correct B20 to name it. The two environments also separate
+credentials: deployment needs Workers Scripts:Edit, D1:Edit and Workers Routes:Edit, while the
+backup only needs account-scoped `D1 Read`.
+
+Resolution: 2026-09-07 — B20 corrected in the same change; `docs/repository-settings.md` and
+`docs/plan/notes-deployment.md` document both environments and the reason for the split.
+
+## 2026-09-07 T19–T22 — the doctor's `no-env-credentials` guard fails the deployment scripts
+
+Expected (plan reference): the T11 entry above established the `// guard:allow-env-credential —
+reason` marker for scripts that read their own configuration from `process.env`, and noted that
+"any later task that reads `SEED_PASSWORD` (T12's smoke, T16's Playwright fixtures, T19/T20's
+workflows) needs the same marker".
+
+Observed: the guard is not limited to credential-shaped names. `agent-native doctor` reported 19
+findings for plain GitHub Actions metadata and runner file paths — `CI_RUN_JSON`,
+`GITHUB_REPOSITORY`, `DEPLOY_SHA`, `GITHUB_OUTPUT`, `STAGING_RUN_ID`, `STAGING_RUN_JSON`,
+`DEPLOYMENT_MANIFEST`, `ARTIFACT_DIR`, `STAGING_SHA`, `CHECKOUT_SHA`, `SOURCE_CI_RUN_ID` — and
+because the gate runs inside `agent-native build`, it failed `pnpm check` *and*
+`pnpm build:worker`, so T19's and T20's own dry-run acceptance could not be reached.
+
+Impact: `scripts/validate-ci-run.mjs`, `scripts/validate-staging-run.mjs`,
+`scripts/verify-promotion-artifact.mjs`, `scripts/write-deployment-manifest.mjs`.
+
+Proposed handling: each read now names its value and why it is not a credential on the marker
+line, and each script reads its environment once at the top so the markers sit next to the
+reads. The guard only accepts a marker on the line directly above the read or trailing on the
+same line, so a read wrapped across two lines by `oxfmt` is not covered — one read had to be
+shortened to a single line to keep the marker adjacent.
+
+Resolution: 2026-09-07 — `pnpm agent-native:doctor` reports "Clean — no findings"; `pnpm check`
+and `pnpm build:worker` pass.
+
+## 2026-09-07 T19–T22 — `actionlint` runs shellcheck over `run:` blocks
+
+Expected (plan reference): `docs/plan/tasks/T19-deploy-staging.md` step 2 and
+`docs/plan/tasks/T20-deploy-production.md` step 4 treat `npx actionlint@latest` as a workflow
+schema check.
+
+Observed: `actionlint` also runs shellcheck over every `run:` block and exits 1 on style
+findings. Six findings failed the acceptance command: SC2129 (repeated `>> "$GITHUB_STEP_SUMMARY"`
+redirects) in four steps, SC2155 (`local_var="$(cmd)"` masking the command's exit status) in the
+step that reads the manifest's CI run id, and SC2016 on a summary line where a backtick had been
+backslash-escaped inside single quotes — which would have written literal backslashes into the
+job summary rather than a code span, so that finding was a real defect in the rollback
+instructions.
+
+Impact: T19 step 2 and T20 step 4 acceptance.
+
+Proposed handling: summary and `$GITHUB_ENV` writes are grouped into a single
+`{ …; } >> "$FILE"` block, the command substitution declares and assigns separately, and the
+rollback guidance writes real fenced code blocks with the two commands (`wrangler rollback
+<version-id> --env production` and, only when a migration corrupted data, `wrangler d1
+time-travel restore`). No functional deployment behavior changed.
+
+Resolution: 2026-09-07 — `actionlint .github/workflows/*.yml` exits 0.
+
+## 2026-09-07 T21 — a local backup run would leave production rows in an untracked directory
+
+Expected (plan reference): `docs/plan/tasks/T21-backups.md` step 1 defaults `BACKUP_DIR` to
+`backups`, and `docs/plan/README.md` requires that no secrets or customer data are committed.
+
+Observed: `backups/` was not in `.gitignore`, and `scripts/restore-d1-check.sh` writes its
+report to `restore-report-<timestamp>.log` in the working directory. A maintainer running
+`pnpm backup:d1` locally would end up with a full production dump — every customer row and
+every user record — as an untracked file that `git add -A` would stage. (The report file was
+already covered by the existing `*.log` rule.)
+
+Impact: `.gitignore`.
+
+Proposed handling: added `backups/` and an explicit `restore-report-*.log` rule with a comment
+saying why. The GitHub workflow is unaffected: it points `BACKUP_DIR` at `$RUNNER_TEMP`.
+
+Resolution: 2026-09-07 — `git check-ignore backups/ restore-report-x.log` matches both.
