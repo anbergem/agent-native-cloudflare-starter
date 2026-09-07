@@ -10,18 +10,17 @@ Depends on: T10, T11. Read: F9, F12; B19.
    `set-cookie`, send `cookie`), `--run-id` (default `<timestamp>`), one check per row of the
    B19 table gated by `--mode`, output `[ok] <check>` / `[fail] <check>: <detail>`, exit 1 on
    any failure, overall timeout 120 s. Readiness: retry `ping` up to 60 times with 2 s sleeps
-   before the first check. Agent-chat check: read the first 2 KB of the SSE body.
+   before the first check. Agent-chat check: read past metadata until meaningful content or an error, bounded by 2 KB and the request deadline; cancel the reader. Local missing credentials proves runtime wiring only.
 2. `package.json`: `smoke` per B15.
-3. Verify locally: `pnpm build:worker && pnpm db:reset && pnpm dev:worker:serve` (background),
-   poll `ping`, then `pnpm db:seed:worker` (the seed script's SQL step needs the framework
-   tables, which exist only after the first request; `db:seed:worker` registers users over
-   HTTP first only if you pass nothing — verify the order in `scripts/seed.mjs` and, if the SQL
-   step runs first, request `/_agent-native/health` once before seeding) `&& pnpm smoke -- --qa-email owner@example.invalid --qa-password
-   Example-Seed-Password-2026 --expect-org-id org_acme` passes every local-mode check.
+3. Verify locally with `pnpm verify:worker`. This builds the Worker, reserves a local port,
+   applies application migrations into a fresh temporary D1 persist directory, boots framework
+   tables through health, loads the scenario and registers users, runs all local checks, and
+   terminates the entire Wrangler/workerd process group before removing state. No development
+   database is reset. The standalone smoke needs explicit `--base-url` and `--mode` arguments.
 
 ## Deliverables
 
-`scripts/worker-smoke.mjs`, `package.json`.
+`scripts/worker-smoke.mjs`, `scripts/verify-worker.mjs`, HTTP helper, guard tests, `package.json`, CI smoke step.
 
 ## Acceptance
 

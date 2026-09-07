@@ -53,3 +53,12 @@ export function requireHistoryPermission(allowed: boolean): void {
   if (!allowed)
     throw new AppError("AUTHORIZATION", "You may not reverse this operation");
 }
+
+/** An invoice intent survives retries, so history cannot reopen its completed work. */
+export function reopensCompletedJob(operation: Operation): boolean {
+  return (
+    operation.inverse?.type === "restore-job-status" &&
+    (operation.inverse.previous.status === "scheduled" ||
+      operation.inverse.previous.status === "in_progress")
+  );
+}

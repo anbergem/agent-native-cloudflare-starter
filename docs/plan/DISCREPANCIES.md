@@ -871,3 +871,36 @@ Resolution: match JavaScript identifier characters including `$`, keeping the ex
 shape and one-match requirement. Add executable fixtures for both proxies, missing/duplicate
 patterns and throwing unknown APIs. Bind the idempotency marker to the bundle SHA-256 so a
 stale marker cannot exempt a rebuilt bundle from patching.
+
+## 2026-09-07 T12/T13 — isolated runtime checks and CLI result format
+
+Observed: resetting Node SQLite does not initialize local D1; framework organization tables
+are created only when the Worker first handles a request. The framework CLI at 0.176.5 prints
+Node inspected objects, and failure messages without application error codes. Its tsx launcher
+needs a local IPC socket, blocked in the restricted sandbox.
+Resolution: the Worker verifier owns temporary D1 state, requests health before SQL seed,
+registers users and tears down the whole process group. Integration setup has one database
+lifecycle owner and reseeds between repository tests and CLI assertions. CLI checks inspect
+actual result objects and nonzero status plus messages; direct use-case tests assert error
+codes. The seed helper uses Node's tsx import hook without an unnecessary IPC listener.
+Local SSE missing_credentials proves the runtime path, not model/tool execution.
+
+## 2026-09-07 T27 — accounting intent and history must be serialized
+
+Observed: recording pending export intent without changing job version allows undo to reopen
+the completed job while an invoice is being accepted. Checking intent only before the write
+leaves a race. Conditional batch statements also need to agree on whether a write succeeded.
+Resolution: reopening history checks durable intent and its guarded repository commit requires
+no accounting export; both the operation insertion and job update enforce this in SQL. Updates
+are linked to the inserted operation. Activity hides unavailable Undo, and get-job exposes
+accountingExportStatus so admins can retry pending exports after an archive. Reconciliation
+preserves current fields. Tests cover response loss and intent appearing between read/write.
+
+## 2026-09-07 Execution — shared implementation worktree
+
+The maintainer requested continued implementation with Sol/Terra agents after the review
+corrections were committed. Corrections are merged in PR #14. Bounded implementation slices
+share task/implementation with non-overlapping file ownership; the coordinating agent reviews,
+verifies and commits milestones. This replaces one branch per small task while preserving
+review and acceptance evidence. Preparation may overlap, but integration remains gated by the
+Worker/CLI proof before accounting/UI acceptance.

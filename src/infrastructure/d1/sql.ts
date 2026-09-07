@@ -78,7 +78,7 @@ WHERE org_id = ? AND id = ? AND version = ?`;
 // ---------------------------------------------------------------------------
 
 const JOB_COLUMNS =
-  "id, org_id, customer_id, title, description, status, scheduled_at, assigned_to, completed_at, archived_at, version, created_by, created_at, updated_at";
+  "id, org_id, customer_id, title, description, status, scheduled_at, assigned_to, completed_at, archived_at, accounting_reference, accounting_sent_at, version, created_by, created_at, updated_at";
 
 export const SELECT_JOB_BY_ID = `SELECT ${JOB_COLUMNS} FROM jobs WHERE org_id = ? AND id = ? LIMIT 1`;
 
@@ -104,27 +104,57 @@ export const SELECT_JOBS_PARTS = {
  * also what keeps a cross-organization create from confirming that an id
  * exists somewhere else (B11). */
 export const INSERT_JOB_IF_ACTIVE_CUSTOMER = `INSERT INTO jobs (${JOB_COLUMNS})
-SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 WHERE EXISTS (SELECT 1 FROM customers WHERE org_id = ? AND id = ? AND status = 'active')`;
 
 /** `title`, `description` and `customer_id` are immutable after creation, so
  * they are not in the SET list; the accounting columns arrive with migration
  * 0002 (T27). */
 export const UPDATE_JOB_VERSIONED = `UPDATE jobs
-SET status = ?, scheduled_at = ?, assigned_to = ?, completed_at = ?, archived_at = ?, version = ?, updated_at = ?
+SET status = ?, scheduled_at = ?, assigned_to = ?, completed_at = ?, archived_at = ?, accounting_reference = ?, accounting_sent_at = ?, version = ?, updated_at = ?
 WHERE org_id = ? AND id = ? AND version = ?`;
+
+const OPERATION_COLUMNS =
+  "id, org_id, kind, action, resource_type, resource_id, classification, version_before, version_after, payload, inverse, related_operation_id, undone_by_operation_id, performed_by, performed_via, performed_at";
+
+const OPERATION_INSERT_VALUES =
+  "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?";
+
+// ---------------------------------------------------------------------------
+// Durable accounting export intents (B22/D27)
+// ---------------------------------------------------------------------------
+
+const ACCOUNTING_EXPORT_COLUMNS =
+  "org_id, job_id, idempotency_key, request_json, status, external_reference, operation_id, requested_by, requested_at, completed_at";
+
+export const SELECT_ACCOUNTING_EXPORT = `SELECT ${ACCOUNTING_EXPORT_COLUMNS} FROM accounting_exports
+WHERE org_id = ? AND job_id = ? LIMIT 1`;
+
+export const INSERT_PENDING_ACCOUNTING_EXPORT = `INSERT OR IGNORE INTO accounting_exports (${ACCOUNTING_EXPORT_COLUMNS})
+SELECT ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL
+WHERE EXISTS (SELECT 1 FROM jobs WHERE org_id = ? AND id = ? AND version = ? AND status = ? AND accounting_reference IS NULL)`;
+
+export const RECORD_ACCOUNTING_ACCEPTANCE = `UPDATE accounting_exports
+SET external_reference = COALESCE(external_reference, ?)
+WHERE org_id = ? AND job_id = ? AND status = ?
+  AND (external_reference IS NULL OR external_reference = ?)`;
+
+export const INSERT_ACCOUNTING_OPERATION_IF_PENDING = `INSERT INTO operations (${OPERATION_COLUMNS})
+SELECT ${OPERATION_INSERT_VALUES}
+WHERE EXISTS (SELECT 1 FROM jobs WHERE org_id = ? AND id = ? AND version = ?)
+  AND EXISTS (SELECT 1 FROM accounting_exports WHERE org_id = ? AND job_id = ? AND status = ? AND external_reference = ?)`;
+
+export const COMPLETE_ACCOUNTING_EXPORT = `UPDATE accounting_exports
+SET status = ?, operation_id = ?, completed_at = ?
+WHERE org_id = ? AND job_id = ? AND status = ? AND external_reference = ?
+  AND EXISTS (SELECT 1 FROM operations WHERE org_id = ? AND id = ?)`;
 
 // ---------------------------------------------------------------------------
 // Operations (the audit and undo log, B9)
 // ---------------------------------------------------------------------------
 
-const OPERATION_COLUMNS =
-  "id, org_id, kind, action, resource_type, resource_id, classification, version_before, version_after, payload, inverse, related_operation_id, undone_by_operation_id, performed_by, performed_via, performed_at";
-
 /** `undone_by_operation_id` is `NULL` in every insert: an operation is marked
  * undone later, by `MARK_OPERATION_UNDONE`, never at birth. */
-const OPERATION_INSERT_VALUES =
-  "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?";
 
 /**
  * The audit row of a job `commit`, guarded on the job still being at the
@@ -141,6 +171,22 @@ const OPERATION_INSERT_VALUES =
 export const INSERT_OPERATION_IF_VERSION = `INSERT INTO operations (${OPERATION_COLUMNS})
 SELECT ${OPERATION_INSERT_VALUES}
 WHERE EXISTS (SELECT 1 FROM jobs WHERE org_id = ? AND id = ? AND version = ?)`;
+
+export const INSERT_OPERATION_IF_VERSION_WITHOUT_ACCOUNTING_EXPORT = `INSERT INTO operations (${OPERATION_COLUMNS})
+SELECT ${OPERATION_INSERT_VALUES}
+WHERE EXISTS (SELECT 1 FROM jobs WHERE org_id = ? AND id = ? AND version = ?)
+  AND NOT EXISTS (SELECT 1 FROM accounting_exports WHERE org_id = ? AND job_id = ?)`;
+
+export const UPDATE_JOB_VERSIONED_WITHOUT_ACCOUNTING_EXPORT = `UPDATE jobs
+SET status = ?, scheduled_at = ?, assigned_to = ?, completed_at = ?, archived_at = ?, accounting_reference = ?, accounting_sent_at = ?, version = ?, updated_at = ?
+WHERE org_id = ? AND id = ? AND version = ?
+  AND NOT EXISTS (SELECT 1 FROM accounting_exports WHERE org_id = ? AND job_id = ?)
+  AND EXISTS (SELECT 1 FROM operations WHERE org_id = ? AND id = ?)`;
+
+export const UPDATE_JOB_VERSIONED_IF_OPERATION = `UPDATE jobs
+SET status = ?, scheduled_at = ?, assigned_to = ?, completed_at = ?, archived_at = ?, accounting_reference = ?, accounting_sent_at = ?, version = ?, updated_at = ?
+WHERE org_id = ? AND id = ? AND version = ?
+  AND EXISTS (SELECT 1 FROM operations WHERE org_id = ? AND id = ?)`;
 
 /** The same guard against `customers`. */
 export const INSERT_OPERATION_IF_CUSTOMER_VERSION = `INSERT INTO operations (${OPERATION_COLUMNS})

@@ -24,6 +24,8 @@ import type { Role } from "../../src/application/authorization";
 import { AppError } from "../../src/application/errors";
 import type {
   Clock,
+  AccountingExport,
+  AccountingExportRepository,
   CustomerRepository,
   Dependencies,
   IdempotencyStore,
@@ -34,6 +36,7 @@ import type {
 } from "../../src/application/ports";
 import type { ExternalAccountingSystem } from "../../src/application/ports/external-accounting";
 import type { Customer, Job, Operation, ResourceType } from "../../src/domain";
+import { createMockAccountingSystem } from "../../src/infrastructure/mock/mock-accounting";
 
 /** The clock value every `createInMemoryDependencies()` call uses unless
  * `options.now` overrides it — "today" in this fixture's fictional
@@ -48,6 +51,10 @@ export interface InMemoryState {
   /** Keyed by `orgId`, `action` and `key` joined with a space (see
    * `idempotencyMapKey` below) → the resourceId that call created. */
   idempotency: Map<string, string>;
+  accountingExports: Map<string, AccountingExport>;
+  /** Tests may install one one-shot mutation immediately before a guarded
+   * job write to model an intervening request. */
+  beforeJobCommit?: () => void | Promise<void>;
   /** orgId → (lower-cased email → role). */
   memberships: Map<string, Map<string, Role>>;
 }
@@ -59,6 +66,8 @@ export interface InMemoryDependenciesOptions {
    * Throws once the sequence is exhausted rather than silently falling back,
    * so a test that asserts on ids notices an unexpected extra call. */
   ids?: string[];
+  state?: InMemoryState;
+  accounting?: ExternalAccountingSystem;
 }
 
 export interface InMemoryDependencies extends Dependencies {
@@ -231,12 +240,23 @@ function createJobRepository(state: InMemoryState): JobRepository {
         );
       }
     },
-    commit: async ({ job, expectedVersion, operation, markUndone }) => {
+    commit: async ({
+      job,
+      expectedVersion,
+      operation,
+      markUndone,
+      requireNoAccountingExport,
+    }) => {
+      const hook = state.beforeJobCommit;
+      state.beforeJobCommit = undefined;
+      await hook?.();
       const existing = state.jobs.get(job.id);
       if (
         !existing ||
         existing.orgId !== job.orgId ||
-        existing.version !== expectedVersion
+        existing.version !== expectedVersion ||
+        (requireNoAccountingExport &&
+          state.accountingExports.has(`${job.orgId} ${job.id}`))
       ) {
         throw new AppError(
           "CONFLICT",
@@ -246,6 +266,88 @@ function createJobRepository(state: InMemoryState): JobRepository {
       state.jobs.set(job.id, job);
       state.operations.set(operation.id, operation);
       applyMarkUndone(state, markUndone, operation.id);
+    },
+  };
+}
+
+function accountingExportMapKey(orgId: string, jobId: string): string {
+  return `${orgId} ${jobId}`;
+}
+
+function createAccountingExportRepository(
+  state: InMemoryState,
+): AccountingExportRepository {
+  return {
+    getByJobId: async (orgId, jobId) =>
+      state.accountingExports.get(accountingExportMapKey(orgId, jobId)) ?? null,
+    createPending: async ({ export: pending, expectedVersion }) => {
+      const key = accountingExportMapKey(pending.orgId, pending.jobId);
+      const winner = state.accountingExports.get(key);
+      if (winner) return winner;
+      const job = state.jobs.get(pending.jobId);
+      if (
+        !job ||
+        job.orgId !== pending.orgId ||
+        job.version !== expectedVersion ||
+        job.status !== "completed" ||
+        job.accountingReference !== null
+      ) {
+        throw new AppError(
+          "CONFLICT",
+          "The record was changed by someone else",
+        );
+      }
+      state.accountingExports.set(key, pending);
+      return pending;
+    },
+    recordAccepted: async ({ orgId, jobId, externalReference }) => {
+      const key = accountingExportMapKey(orgId, jobId);
+      const pending = state.accountingExports.get(key);
+      if (
+        !pending ||
+        (pending.externalReference !== null &&
+          pending.externalReference !== externalReference)
+      ) {
+        throw new AppError(
+          "CONFLICT",
+          "The record was changed by someone else",
+        );
+      }
+      const accepted = {
+        ...pending,
+        externalReference: pending.externalReference ?? externalReference,
+      };
+      state.accountingExports.set(key, accepted);
+      return accepted;
+    },
+    complete: async ({ export: pending, job, expectedVersion, operation }) => {
+      const hook = state.beforeJobCommit;
+      state.beforeJobCommit = undefined;
+      await hook?.();
+      const key = accountingExportMapKey(pending.orgId, pending.jobId);
+      const stored = state.accountingExports.get(key);
+      const current = state.jobs.get(job.id);
+      if (
+        !stored ||
+        stored.status !== "pending" ||
+        stored.externalReference !== pending.externalReference ||
+        !current ||
+        current.orgId !== job.orgId ||
+        current.version !== expectedVersion
+      ) {
+        throw new AppError(
+          "CONFLICT",
+          "The record was changed by someone else",
+        );
+      }
+      state.jobs.set(job.id, job);
+      state.operations.set(operation.id, operation);
+      state.accountingExports.set(key, {
+        ...stored,
+        status: "completed",
+        operationId: operation.id,
+        completedAt: operation.performedAt,
+      });
     },
   };
 }
@@ -325,25 +427,15 @@ function createIdempotencyStore(state: InMemoryState): IdempotencyStore {
  * `sendJobToAccounting` themselves. T27 adds the real, independently tested
  * mock at `src/infrastructure/mock/mock-accounting.ts`.
  */
-function createInMemoryAccounting(): ExternalAccountingSystem {
-  const seenKeys = new Set<string>();
-  return {
-    createInvoiceDraft: async ({ idempotencyKey, job }) => {
-      const alreadyExisted = seenKeys.has(idempotencyKey);
-      seenKeys.add(idempotencyKey);
-      return { externalReference: `ACC-${job.id}`, alreadyExisted };
-    },
-  };
-}
-
 export function createInMemoryDependencies(
   options: InMemoryDependenciesOptions = {},
 ): InMemoryDependencies {
-  const state: InMemoryState = {
+  const state: InMemoryState = options.state ?? {
     customers: new Map(),
     jobs: new Map(),
     operations: new Map(),
     idempotency: new Map(),
+    accountingExports: new Map(),
     memberships: new Map(),
   };
 
@@ -355,7 +447,8 @@ export function createInMemoryDependencies(
     jobs: createJobRepository(state),
     operations: createOperationRepository(state),
     idempotency: createIdempotencyStore(state),
-    accounting: createInMemoryAccounting(),
+    accounting: options.accounting ?? createMockAccountingSystem(),
+    accountingExports: createAccountingExportRepository(state),
     state,
   };
 }

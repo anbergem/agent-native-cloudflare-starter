@@ -801,3 +801,13 @@ Container: `accounting` is the mock adapter in every environment of the starter.
 adapter is added by implementing the port in `src/infrastructure/<vendor>/` and selecting it in
 the container from `APP_ENV`-independent configuration (documented in `docs/integrations.md`,
 never in this sample).
+
+### D27 implementation clarification: pending exports and history
+
+`get-job` additionally returns `accountingExportStatus: "pending" | "completed" | null`.
+A pending export remains retryable by an admin/owner even when the job is archived. Undo
+cannot restore scheduled/in-progress status when a durable accounting intent exists. This
+condition is rechecked atomically by `JobRepository.commit` with
+`requireNoAccountingExport`, not only by a prior read. Archive and restoration to completed
+remain possible, preserving accounting fields. Conditional job updates are linked to the
+operation inserted by the same batch so a refused audit insertion cannot mutate the job.

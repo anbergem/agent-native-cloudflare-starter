@@ -22,7 +22,7 @@ import { canUndo } from "../../domain";
 import type { Actor } from "../actor";
 import { requireCapability } from "../authorization";
 import { AppError } from "../errors";
-import { mayUndo, mayRedo } from "../history-policy";
+import { mayUndo, mayRedo, reopensCompletedJob } from "../history-policy";
 import type { Dependencies } from "../ports";
 import { isCreateOperation } from "./command";
 
@@ -135,6 +135,21 @@ export async function listRecentActivity(
     ),
   );
 
+  const reopeningIds = new Set(
+    operations.filter(reopensCompletedJob).map((op) => op.resourceId),
+  );
+  const exportLocked = new Set(
+    (
+      await Promise.all(
+        Array.from(reopeningIds, async (id) =>
+          (await deps.accountingExports.getByJobId(actor.orgId, id))
+            ? id
+            : null,
+        ),
+      )
+    ).filter((id): id is string => id !== null),
+  );
+
   return operations.map((op) => {
     const version =
       versions.get(resourceKey(op.resourceType, op.resourceId)) ?? null;
@@ -145,7 +160,10 @@ export async function listRecentActivity(
     return {
       ...op,
       undoable:
-        version !== null && canUndo(op, version).ok && mayUndo(actor, op),
+        version !== null &&
+        canUndo(op, version).ok &&
+        mayUndo(actor, op) &&
+        !(reopensCompletedJob(op) && exportLocked.has(op.resourceId)),
       redoable:
         version !== null &&
         op.kind === "undo" &&

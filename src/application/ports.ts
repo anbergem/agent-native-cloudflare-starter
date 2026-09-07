@@ -23,6 +23,7 @@ import type {
 } from "../domain";
 import type { Role } from "./authorization";
 import type { ExternalAccountingSystem } from "./ports/external-accounting";
+import type { AccountingInvoiceDraft } from "./ports/external-accounting";
 
 export * from "./ports/external-accounting";
 
@@ -86,6 +87,7 @@ export interface JobRepository {
     expectedVersion: number;
     operation: Operation;
     markUndone?: string;
+    requireNoAccountingExport?: boolean;
   }): Promise<void>;
 }
 
@@ -116,6 +118,45 @@ export interface IdempotencyStore {
   find(orgId: string, action: string, key: string): Promise<string | null>;
 }
 
+export type AccountingExportStatus = "pending" | "completed";
+
+export interface AccountingExport {
+  orgId: string;
+  jobId: string;
+  idempotencyKey: string;
+  request: AccountingInvoiceDraft;
+  status: AccountingExportStatus;
+  externalReference: string | null;
+  operationId: string | null;
+  requestedBy: string;
+  requestedAt: string;
+  completedAt: string | null;
+}
+
+export interface AccountingExportRepository {
+  getByJobId(orgId: string, jobId: string): Promise<AccountingExport | null>;
+  /** Inserts only while the named job is completed, unsent and at the
+   * expected version. A concurrent winner is returned instead. */
+  createPending(input: {
+    export: AccountingExport;
+    expectedVersion: number;
+  }): Promise<AccountingExport>;
+  /** Persists a vendor identity before attempting the local completion. */
+  recordAccepted(input: {
+    orgId: string;
+    jobId: string;
+    externalReference: string;
+  }): Promise<AccountingExport>;
+  /** Atomically updates the current job, records the irreversible operation,
+   * and marks the request completed. Throws CONFLICT on a stale job version. */
+  complete(input: {
+    export: AccountingExport;
+    job: Job;
+    expectedVersion: number;
+    operation: Operation;
+  }): Promise<void>;
+}
+
 export interface Dependencies {
   clock: Clock;
   ids: IdGenerator;
@@ -125,4 +166,5 @@ export interface Dependencies {
   operations: OperationRepository;
   idempotency: IdempotencyStore;
   accounting: ExternalAccountingSystem;
+  accountingExports: AccountingExportRepository;
 }

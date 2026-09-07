@@ -43,6 +43,8 @@ export const jobs = table("jobs", {
   assignedTo: text("assigned_to"),
   completedAt: text("completed_at"),
   archivedAt: text("archived_at"),
+  accountingReference: text("accounting_reference"),
+  accountingSentAt: text("accounting_sent_at"),
   version: integer("version").notNull(),
   createdBy: text("created_by").notNull(),
   createdAt: text("created_at").notNull(),
@@ -78,4 +80,17 @@ export const idempotencyKeys = table("idempotency_keys", {
   key: text("key").notNull(),
   resourceId: text("resource_id").notNull(),
   createdAt: text("created_at").notNull(),
+});
+
+export const accountingExports = table("accounting_exports", {
+  orgId: text("org_id").notNull(),
+  jobId: text("job_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  requestJson: text("request_json").notNull(),
+  status: text("status", { enum: ["pending", "completed"] }).notNull(),
+  externalReference: text("external_reference"),
+  operationId: text("operation_id"),
+  requestedBy: text("requested_by").notNull(),
+  requestedAt: text("requested_at").notNull(),
+  completedAt: text("completed_at"),
 });

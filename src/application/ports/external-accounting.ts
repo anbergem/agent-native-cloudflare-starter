@@ -18,11 +18,18 @@
  */
 export class ExternalSystemError extends Error {}
 
+export interface AccountingInvoiceDraft {
+  idempotencyKey: string;
+  orgId: string;
+  customer: { id: string; name: string };
+  job: { id: string; title: string; completedAt: string };
+}
+
 export interface ExternalAccountingSystem {
-  createInvoiceDraft(input: {
-    idempotencyKey: string;
-    orgId: string;
-    customer: { id: string; name: string };
-    job: { id: string; title: string; completedAt: string };
-  }): Promise<{ externalReference: string; alreadyExisted: boolean }>;
+  /** The vendor must make this operation idempotent for `idempotencyKey`.
+   * A thrown error may happen before acceptance or after acceptance while the
+   * response is in flight, so callers always retry the same immutable input. */
+  createInvoiceDraft(
+    input: AccountingInvoiceDraft,
+  ): Promise<{ externalReference: string; alreadyExisted: boolean }>;
 }

@@ -738,7 +738,7 @@ function insertOrIgnore(
 const CUSTOMER_INSERT_COLUMNS =
   "id, org_id, name, email, phone, notes, status, version, created_by, created_at, updated_at";
 const JOB_INSERT_COLUMNS =
-  "id, org_id, customer_id, title, description, status, scheduled_at, assigned_to, completed_at, archived_at, version, created_by, created_at, updated_at";
+  "id, org_id, customer_id, title, description, status, scheduled_at, assigned_to, completed_at, archived_at, accounting_reference, accounting_sent_at, version, created_by, created_at, updated_at";
 const OPERATION_INSERT_COLUMNS =
   "id, org_id, kind, action, resource_type, resource_id, classification, version_before, version_after, payload, inverse, related_operation_id, undone_by_operation_id, performed_by, performed_via, performed_at";
 
@@ -827,6 +827,8 @@ export function buildScenarioSql(): string[] {
         sqlText(job.assignedTo),
         sqlText(job.completedAt),
         sqlText(job.archivedAt),
+        sqlText(job.accountingReference),
+        sqlText(job.accountingSentAt),
         String(job.version),
         sqlText(job.createdBy),
         sqlText(job.createdAt),
@@ -879,6 +881,7 @@ export function buildScenarioResetSql(): string[] {
 
   return [
     `DELETE FROM operations WHERE org_id IN (${orgIds});`,
+    `DELETE FROM accounting_exports WHERE org_id IN (${orgIds});`,
     `DELETE FROM jobs WHERE org_id IN (${orgIds});`,
     `DELETE FROM customers WHERE org_id IN (${orgIds});`,
     `DELETE FROM org_members WHERE org_id IN (${orgIds});`,
