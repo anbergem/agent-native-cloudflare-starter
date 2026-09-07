@@ -133,6 +133,10 @@ export function Layout({ children }: LayoutProps) {
       ) : (
         <Header onOpenMobileSidebar={() => setMobileSidebarOpen(true)} />
       )}
+      {/* The one `main` landmark of the document. Route components render
+          sections inside it and never a second `main`: nested landmarks
+          confuse assistive navigation and make `locator("main")` in the
+          end-to-end suite ambiguous. */}
       <main className="agent-native-app-main min-w-0 flex-1 overflow-y-auto overscroll-contain">
         {children}
       </main>
