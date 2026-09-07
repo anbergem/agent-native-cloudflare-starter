@@ -1,0 +1,13 @@
+- Staging secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `SEED_PASSWORD`.
+- Production secrets: `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+- Grant the Cloudflare token Workers Scripts:Edit, D1:Edit, and Workers Routes:Edit.
+- Staging variable: `STAGING_URL`; production variable: `PRODUCTION_URL`.
+- Protect the `production` GitHub environment with required reviewers.
+- Use a separate `production-backup` environment without required reviewers so scheduled exports can run unattended. Give its Cloudflare token account-scoped `D1 Read`, the minimum documented D1 read permission. This permission is account-scoped rather than restricted to one database, so use a dedicated Cloudflare account where stronger database isolation is required.
+- Staging deploys only a SHA with a successful same-repository `CI` run on `main`; manual staging dispatch is restricted to `main` and performs the same exact-SHA CI lookup.
+- Each staging run publishes an immutable deployment manifest containing the actual deployed SHA and its source CI run id. GitHub's staging workflow-run `head_sha` is not used as promotion provenance because it can describe the workflow's default-branch context rather than the triggering CI commit.
+- Production dispatch is restricted to `main`. It accepts a numeric staging run id, validates the staging workflow/repository/branch/status/conclusion, validates the manifest's exact source CI run, checks out the manifest SHA, and deploys its verified artifact without rebuilding.
+- Configure backup encryption with `BACKUP_AGE_RECIPIENT` when required.
+- Set `BACKUP_AGE_IDENTITY` to the matching age identity file when running a restore check for an encrypted backup; keep that file outside the repository.
+- Configure S3 backup storage with `BACKUP_S3_BUCKET`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY`, and optional `BACKUP_S3_REGION`/`BACKUP_S3_PREFIX`.
+- Without S3 configuration, the backup workflow keeps a GitHub artifact for 30 days.

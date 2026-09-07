@@ -18,12 +18,13 @@ Depends on: T20. Read: F10; B20 (backup); D23.
    `--endpoint-url`); print the final artifact path. File name
    `<database>-<UTC yyyymmdd-HHMMSS>-<git sha short>.sql.gz[.age]`.
 2. `.github/workflows/backup-d1.yml`: `schedule: cron "0 3 * * *"` plus `workflow_dispatch`;
-   `environment: production`; install pnpm/node; install `age` (apt) only if
+   `environment: production-backup` (no required reviewers; account-scoped `D1 Read` token),
+   trusted `main` checkout and manual-dispatch guard; install pnpm/node; install `age` (apt) only if
    `BACKUP_AGE_RECIPIENT` is set; run the script; if no S3 bucket is configured upload the
    artifact with `actions/upload-artifact@v4` and `retention-days: 30`.
-3. `scripts/restore-d1-check.sh`: takes a backup file, decrypts/decompresses to a temp file,
-   creates a **local** scratch D1 (`wrangler d1 execute example-jobs-local --local --file`
-   after `rm -rf .wrangler/state`), then prints row counts for `customers`, `jobs`,
+3. `scripts/restore-d1-check.sh`: takes a backup file, decrypts/decompresses to a temp file
+   (`BACKUP_AGE_IDENTITY` names the identity file for `.age` input), creates a **local** scratch
+   D1 with an isolated `--persist-to` directory (never removing `.wrangler/state`), then prints row counts for `customers`, `jobs`,
    `operations` and the applied migrations. This is the "test restore" that never touches
    production.
 4. `docs/backups.md` sections: strategy (two layers, with links to the D1 Time Travel and D1
