@@ -70,7 +70,7 @@ build`, `typecheck` = `agent-native typecheck`, `action` = `agent-native action`
 | `@agent-native/core/server` | `createAuthPlugin`, `createAgentChatPlugin`, `loadActionsFromStaticRegistry`, `defineAppConfig`, `runWithRequestContext`, `getRequestContext`, `runAuthGuard` |
 | `@agent-native/core/org` | `createOrganization`, `isOrgMember`, `orgRoleAtLeast`, `getOrgContext`, `queryOrgMembers`, tables `organizations`, `orgMembers`, type `OrgRole` |
 | `@agent-native/core/client/hooks` | `useActionQuery`, `useActionMutation`, `callAction`, `actionErrorMessage`, `useSession`, `AppProviders`, `useDbSync` |
-| `@agent-native/core/client/org-team` | `OrgSwitcher`, `TeamPage`, `useOrgRole`, `RequireActiveOrg` |
+| `@agent-native/core/client/org` (also exported as `.../client/org-team`; the scaffold uses the shorter path and so does this app) | `OrgSwitcher`, `TeamPage`, `useOrgRole` (`{ canManageOrg, ... }`), `RequireActiveOrg` |
 | `@agent-native/core/client/i18n` | `createAgentNativeI18nCatalog`, `useT`, `useFormatters`, `LanguagePicker`, `getLocaleInitScript`, type `LocaleCode` |
 | `@agent-native/core/client/agent-chat` | agent chat helpers (the scaffold's `Layout` already renders the sidebar; keep it) |
 | `@agent-native/core/eval` | `defineEval`, `usesTool`, `contains`, `createScorer` |
@@ -237,6 +237,14 @@ NITRO_PRESET=cloudflare_pages NODE_ENV=production pnpm exec agent-native build
   login, org/me, app action, `list-audit-events`, MCP (`POST /mcp` → 401 with
   `WWW-Authenticate` challenge) and agent chat (SSE with `missing_credentials` error when no
   provider key) all worked.
+- A response held open with no pending I/O does not survive: the runtime answers
+  `Uncaught Error: The Workers runtime canceled this request because it detected that your
+  Worker's code had hung and would never generate a response`, and under `wrangler dev` 4.129.0
+  that cancellation reaches `ProxyController.emitErrorEvent` and **kills the dev server**. The
+  framework's `/_agent-native/events` sync stream (`createEventStream(event).send()`) is exactly
+  that shape, so the app passes `sseUrl: false` to `useDbSync` and relies on
+  `/_agent-native/poll` (T14/T16). Streams that produce data and finish, such as
+  `POST /_agent-native/agent-chat`, are unaffected.
 - Framework endpoints for smoke tests: `GET /_agent-native/ping` → `{"message":"pong"}`;
   `GET /_agent-native/health` → JSON with `ok`, `ready`, `db: true`, `database.dialect: "d1"`.
 - Static assets are served by the `ASSETS` binding for GET/HEAD when a file exists; everything
@@ -345,6 +353,9 @@ Agent chat endpoint: `POST /_agent-native/agent-chat` with `{ "message": "..." }
 - App catalogs: `app/i18n/index.ts` builds `createAgentNativeI18nCatalog({ messages: enUS,
   localeLoaders: { "<code>": () => import("./<code>") }, supportedLocales?: [...] })`.
   `useT()(key, params)`, `useFormatters()` for dates/numbers, `<LanguagePicker />`.
+  Interpolation is `{{name}}` only (`template.replace(/\{\{(\w+)\}\}/g, ...)` in
+  `dist/client/i18n.js`); a single-brace `{name}` is never substituted and reaches the screen
+  verbatim, so `scripts/check-i18n-catalogs.mjs` rejects it (T15).
 - Guard: `pnpm guard:i18n-catalogs` (add script from the template if missing; verify the exact
   command in `docs/content/internationalization.mdx`).
 - Framework UI catalogs: `dist/localization/core-messages/<code>.js`; English source

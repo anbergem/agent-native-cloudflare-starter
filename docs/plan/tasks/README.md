@@ -20,11 +20,11 @@ T14/T15/T16 → T17/T18 → delivery/docs/final verification. CI grows with each
 | T11 | Seed scenario and seed script | T07 | done (PR #13) |
 | T12 | Worker smoke script | T10, T11 | done (T12/T13/T27 implementation milestone) |
 | T13 | Integration tests through the CLI surface | T10, T11 | done (T12/T13/T27 implementation milestone) |
-| T14 | User interface | T10, T27 | in-progress (Codex) |
-| T15 | Internationalization | T14 | in-progress (Codex) |
-| T16 | Playwright end-to-end suite | T12, T15 | todo |
-| T17 | Agent evals | T10, T11 | todo |
-| T18 | CI workflow | T13, T16, T17 | in-progress (baseline introduced by review corrections) |
+| T14 | User interface | T10, T27 | done (PR #17) |
+| T15 | Internationalization | T14 | done (PR #17) |
+| T16 | Playwright end-to-end suite | T12, T15 | done (PR #17) |
+| T17 | Agent evals | T10, T11 | done (PR #17) |
+| T18 | CI workflow | T13, T16, T17 | done (PR #17) |
 | T19 | Staging deployment workflow | T18 | todo |
 | T20 | Production deployment workflow | T19 | todo |
 | T21 | Backups and restore | T20 | todo |

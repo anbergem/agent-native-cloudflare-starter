@@ -6,19 +6,25 @@ Depends on: T10, T27. Read: F4 (client imports), F5 (client hooks); B2 (ui rules
 
 ## Steps
 
-1. Routes (`app/routes/`): `jobs.tsx` (list + status filter + "New job" dialog), `jobs.$id.tsx`
-   (detail with Start, Complete, Reschedule, Archive and the job's operation list from
-   `list-recent-activity` with `resourceType: "job", resourceId`), `customers.tsx` (list +
-   "New customer" dialog + archive button), `customers.$id.tsx`, `activity.tsx` (recent
-   operations with Undo/Redo buttons using the `undoable`/`redoable` flags); keep `team.tsx`,
-   `settings*.tsx`, `observability.tsx`, `agent.tsx`, `chat.$threadId.tsx`; make `home.tsx`
-   redirect to `/jobs` and set the framework's `app.homePath` to `/jobs` (it is `/home` in
+1. Routes (`app/routes/`): `jobs.tsx` (list + status filter + "New job" dialog),
+   `jobs_.$id.tsx` (detail with Start, Complete, Reschedule, Archive and the job's operation
+   list from `list-recent-activity` with `resourceType: "job", resourceId`), `customers.tsx`
+   (list + "New customer" dialog + archive button), `customers_.$id.tsx`, `activity.tsx`
+   (recent operations with Undo/Redo buttons using the `undoable`/`redoable` flags). The
+   trailing underscore on the two detail files is required: `flatRoutes()` makes
+   `jobs.$id.tsx` a **child** of `jobs.tsx`, which renders no `<Outlet />`, so `/jobs/:id`
+   serves the list page. Keep `team.tsx`, `settings*.tsx`, `observability.tsx`, `agent.tsx`,
+   `home.tsx` and `chat.$threadId.tsx` (`home.tsx` is the agent chat page and
+   `chat.$threadId.tsx` re-exports it); nobody lands there by default because `_index.tsx`
+   navigates to `/jobs` and the framework's `app.homePath` is set to `/jobs` (it is `/home` in
    `server/plugins/agent-native-email-branding.ts` or `server/plugins/config.ts`; find it with
    `grep -rn homePath server/`). Sidebar entries: Jobs, Customers, Activity, Team, Settings.
 2. Components under `app/components/jobs/`, `app/components/customers/`,
    `app/components/activity/`: forms use `react-hook-form` (present in the scaffold) with Zod
-   for shape only; business rules stay server-side. Status badges; every date-time rendered
-   through `useFormatters()`.
+   for shape only; business rules stay server-side. Every form control carries an `aria-label`
+   (a placeholder is not a label). Status badges; every date-time rendered through
+   `useFormatters()`. Route components render sections, not a `<main>`: the scaffold `Layout`
+   already provides the document's only `main` landmark.
 3. Mutations: `useActionMutation("<name>")`; on success invalidate the affected `list-*` and
    `get-*` queries and call `toast(<message>, { action: { label: t("common.undo"), onClick: () =>
    undo(operationId) } })`; offer Undo/Redo only when the history policy says the resulting operation permits it; creates have no Redo and irreversible exports have no Undo. On error show

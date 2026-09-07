@@ -590,7 +590,7 @@ Locally they come from `.dev.vars`.
 | `agent-native:doctor` | `agent-native doctor` (never name a script `doctor`: pnpm 11 has a built-in `doctor` subcommand that shadows it) |
 | `check:boundaries` | `node scripts/check-boundaries.mjs` |
 | `check:config` | `node scripts/check-config-hygiene.mjs` (D17 forbidden keys; no `REPLACE_ME` outside env blocks; secrets not in vars) |
-| `check` | `pnpm lint && pnpm typecheck && pnpm agent-native:doctor && pnpm check:boundaries && pnpm check:config && pnpm test:unit` |
+| `check` | `pnpm lint && pnpm typecheck && pnpm agent-native:doctor && pnpm check:boundaries && pnpm check:config && pnpm test:unit && pnpm test:guards && pnpm guard:i18n` |
 | `test:unit` | `vitest --run` |
 | `test:integration` | `node scripts/test-integration.mjs` (CLI surface tests against a fresh Node SQLite DB) |
 | `test:e2e` | `playwright test` (expects `dist/` built; CI builds first) |
@@ -599,7 +599,7 @@ Locally they come from `.dev.vars`.
 | `deploy:staging` | `wrangler deploy --env staging` |
 | `deploy:production` | `wrangler deploy --env production` |
 | `backup:d1` | `bash scripts/backup-d1.sh` |
-| `eval` | `agent-native eval` |
+| `eval` | `node scripts/run-evals.mjs` (gives `agent-native eval` a temporary migrated and seeded database and the tsx resolver; T17) |
 | `action` | `agent-native action` |
 
 ## B16. Actions and the runner (`src/interface/run-app-action.ts`)
@@ -661,11 +661,18 @@ detail with actions Start, Complete, Reschedule (date-time input), Archive, and 
 history for that job; `/customers` list with "New customer" dialog, archive button visible only
 when `useOrgRole()` says admin/owner (server still enforces); `/customers/:id`; `/activity`
 recent operations with undo/redo buttons; `/team` (framework `TeamPage`); `/settings`
-(framework settings including `LanguagePicker`). The scaffold `Layout` with the agent sidebar
-stays. After every successful mutation show a `sonner` toast with an "Undo" button that calls
+(framework settings including `LanguagePicker`). The two detail routes are
+`app/routes/jobs_.$id.tsx` and `app/routes/customers_.$id.tsx`: under `flatRoutes()` the
+trailing underscore is what keeps them out of the list route's layout, and without it
+`/jobs/:id` renders the list (T14). The scaffold `Layout` with the agent sidebar
+stays, and it owns the document's only `main` landmark — route components render sections
+inside it, never a second `main`. After every successful mutation show a `sonner` toast with an "Undo" button that calls
 `undo-operation` with the returned `operationId`; after undo show "Redo". All strings through
-`useT()`; dates through `useFormatters()`. Data fetching: `useActionQuery`; mutations:
-`useActionMutation`; invalidate queries on success (the framework's `useDbSync` also refreshes).
+`useT()`; dates through `useFormatters()`. Catalog placeholders are `{{name}}` — the framework
+substitutes no other form (F14). Data fetching: `useActionQuery`; mutations:
+`useActionMutation`; invalidate queries on success (the framework's `useDbSync` also refreshes,
+configured `sseUrl: false` because a held-open stream cannot survive on Workers — F9 — so its
+poll is the transport here).
 Error display: map `errorCode` to `errors.<CODE>` catalog keys, fall back to the server message.
 
 ## B18. Testing design
@@ -676,7 +683,7 @@ Error display: map `errorCode` to `errors.<CODE>` catalog keys, fall back to the
   the B9 conflict scenario; SQL scoping test; config hygiene test; runner error mapping.
 - Integration (`tests/integration`): against a fresh Node SQLite DB (`DATABASE_URL=file:./data/test-integration.db`) migrated with `scripts/migrate-local.mjs` and seeded with SQL: real D1-shaped repositories through `getDbExec()`; CLI surface parity `AGENT_USER_EMAIL=member1@example.invalid AGENT_ORG_ID=org_acme pnpm action complete-job '{"jobId":"job_in_progress"}'` returns the job with status completed and a new `forward` operation exists; `outsider@example.invalid` in `org_other` querying an Acme job returns NOT_FOUND;
   `member1@example.invalid` claiming `org_other` is AUTHORIZATION before resource access.
-- End-to-end (`tests/e2e`, Playwright, one worker, chromium): server = built Worker under `wrangler dev` started by `scripts/e2e-server.mjs` (reset `.wrangler/state`, apply migrations, spawn wrangler dev, poll `ping`, request `/_agent-native/health` once so the framework creates its tables, then apply the scenario SQL with `wrangler d1 execute --local` while the server keeps running — verified order from T11); `global-setup.ts` registers the five users over HTTP, logs each in, stores `tests/e2e/.auth/<name>.json` storage states; fixtures `ownerPage`, `adminPage`, `memberPage`, `outsiderPage`; every page fixture attaches a request listener that fails the test on any request whose URL origin differs from `baseURL`. Required specs: sign-in and dashboard (owner); member lists jobs; member completes `job_in_progress`; mutation appears in activity and in the framework audit trail (`list-audit-events` shows `complete-job` with `caller: "frontend"`); undo restores status and appears as its own operation; undo conflict (reschedule via UI, complete via HTTP as another user, then UI undo shows the conflict error); outsider navigating to `/jobs/job_scheduled` sees not-found, and `GET /_agent-native/actions/get-job?jobId=job_scheduled` as outsider returns 404; member calling `archive-customer` over HTTP gets 403; HTTP call to `complete-job` (caller `http`) and UI click hit the same action (audit rows differ only in `caller`).
+- End-to-end (`tests/e2e`, Playwright, one worker, chromium): server = built Worker under `wrangler dev` started by `scripts/e2e-server.mjs` (reset `.wrangler/state`, apply migrations, spawn wrangler dev, poll `ping`, request `/_agent-native/health` once so the framework creates its tables, then apply the scenario SQL with `wrangler d1 execute --local` while the server keeps running — verified order from T11); `global-setup.ts` registers the five users over HTTP, logs each in, stores `tests/e2e/.auth/<name>.json` storage states; fixtures `ownerPage`, `adminPage`, `memberPage`, `outsiderPage`; every page fixture attaches a request listener that fails the test on any request whose URL origin differs from `baseURL`. An auto `reset` fixture restores the scenario before every test and also deletes this organization's rows from the framework's own `agent_audit_log`, which `buildScenarioResetSql()` does not touch, so exact audit assertions do not depend on the order the suite ran in (T16). Wrangler's stdio is piped rather than inherited and Playwright is configured with `gracefulShutdown: { signal: "SIGTERM" }`: a descendant holding Playwright's own stdio handles hangs the run at teardown, and SIGKILL leaves the detached Wrangler group alive (T16). Required specs: sign-in and dashboard (owner); member lists jobs; member completes `job_in_progress`; mutation appears in activity and in the framework audit trail (`list-audit-events` shows `complete-job` with `caller: "frontend"`); undo restores status and appears as its own operation; undo conflict (reschedule via UI, complete via HTTP as another user, then UI undo shows the conflict error); outsider navigating to `/jobs/job_scheduled` sees not-found, and `GET /_agent-native/actions/get-job?jobId=job_scheduled` as outsider returns 404; member calling `archive-customer` over HTTP gets 403; HTTP call to `complete-job` (caller `http`) and UI click hit the same action (audit rows differ only in `caller`).
 - Smoke (`scripts/worker-smoke.mjs`): B19.
 - Evals (`evals/*.eval.ts`): `complete-job` prompt → `usesTool("complete-job")`; "show today's jobs" → `usesTool("list-jobs")` and a custom scorer asserting no mutating tool in `toolCalls`; "undo that" → `usesTool("undo-operation")`; all with `skipReason` unless `RUN_MODEL_EVALS=1`.
 
@@ -712,11 +719,15 @@ browser tests in T16, final CI acceptance in T18. Every added capability joins C
 
 `ci.yml` (pull_request, push to main): job `verify` — checkout, pnpm setup, `pnpm install
 --frozen-lockfile`, `pnpm check`, `pnpm test:integration`; job `worker` (needs verify) —
-`pnpm build:worker`, upload artifact `worker-bundle` (dist/), generate `.dev.vars` with a random
-`BETTER_AUTH_SECRET`, `pnpm exec playwright install --with-deps chromium`, `pnpm test:e2e`
-(its server script migrates and seeds), then `pnpm smoke` against the still-running server is
-covered inside the e2e global setup (call the smoke script from `global-setup.ts` in local mode).
-Concurrency group per ref. Timeouts 30 minutes.
+`pnpm verify:worker` (which builds the bundle and runs the local smoke against it in its own
+temporary D1), upload artifact `worker-bundle` (dist/, `include-hidden-files: true` so
+`dist/.assetsignore` survives); job `e2e` (needs worker) — download that artifact into `dist/`,
+`pnpm exec playwright install --with-deps chromium`, `pnpm test:e2e` (its server script
+migrates, seeds and runs the local smoke from `global-setup.ts`), upload `playwright-report/`
+on failure. The bundle is built once (T18). No `.dev.vars` is written: `scripts/e2e-server.mjs`
+generates its own Wrangler configuration with the vars it needs and sets
+`CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false`, so the browser suite is independent of any
+developer file. Concurrency group per ref. Timeouts 20 minutes for `verify`, 30 for the rest.
 
 `deploy-staging.yml` (push to main, after ci succeeds via `workflow_run` on ci.yml completed
 + success, or by `needs` if combined; choose `workflow_run`): environment `staging`; secrets
