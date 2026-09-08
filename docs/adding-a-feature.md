@@ -326,7 +326,7 @@ tests/e2e/jobs-lifecycle.spec.ts               the browser flow
 evals/assign-job.eval.ts                       optional
 ```
 
-Seventeen files for one verb. That is the cost of the boundaries, and it is why
+Nineteen files for one verb. That is the cost of the boundaries, and it is why
 `ARCHITECTURE.md` argues for capabilities over CRUD rather than assuming it: a generic
 `update-job` would be three files and would put the transition rules, the audit summary and the
 inverse in the caller's hands.

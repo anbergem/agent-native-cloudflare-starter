@@ -113,7 +113,7 @@ A generic field-service application, so the architecture is visible without doma
 - Every change writes an **operation** recording who did it, from which surface, and how to
   reverse it. `/activity` shows the history with Undo and Redo.
 
-Fourteen actions cover it: five queries, seven commands, and undo/redo. The interesting ones
+Fifteen actions cover it: five queries, eight commands, and undo/redo. The interesting ones
 are `complete-job` (reversible, and the worked example throughout the docs),
 `undo-operation` (refuses when the record moved on) and `send-job-to-accounting`
 (irreversible, admin-only, needs the agent to obtain human approval).

@@ -1,5 +1,20 @@
 # Implementation plan — how to use it
 
+## Status
+
+**This plan was executed. It finished on 2026-09-08**, when task T26 verified the definition of
+done below from a fresh clone of `main` at commit `760f349`; every task T00–T27 is now `done` in
+`tasks/README.md` with its pull request number. The plan is kept in the repository as design
+history, not as work in progress: nothing here describes anything still to be built, and root
+`AGENTS.md` no longer routes work through it. **The final report is
+[`FINAL-REPORT.md`](FINAL-REPORT.md)** — what was implemented, the decisions that shaped it, the
+commands that were run with their output, the framework limitations that were hit, what a
+maintainer must still do for Cloudflare, Google and GitHub, and the definition-of-done table with
+its caveats. Read that first; read the rest of this directory when you want to know *why*
+something is the way it is. `docs/bootstrap.md` says when it is safe to delete.
+
+## What this directory is
+
 This directory is the complete, self-contained specification for building the
 `agent-native-cloudflare-starter` template repository. It was written so that an
 implementer with no memory of the design conversation can pick up any single task and

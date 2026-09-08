@@ -225,18 +225,3 @@ pnpm test:e2e:full      # when you touched the UI or an action's contract
 Paste the output into the pull request. `pnpm check` plus `pnpm test:integration` is what CI's
 `verify` job runs; `CI / verify`, `CI / worker` and `CI / e2e` are the required checks on
 `main`.
-
-## While the implementation plan is active
-
-This repository is being built from a written plan under `docs/plan/`. Until task T26 marks it
-complete:
-
-- Read `docs/plan/README.md` before picking up work. It explains how tasks are chosen, the
-  acceptance rules and the discrepancy protocol.
-- Read your assigned task file under `docs/plan/tasks/` in full, plus the sections of
-  `docs/plan/02-framework-facts.md` and `docs/plan/03-blueprint.md` it lists.
-- When reality differs from the plan, append the evidence and the resolution to
-  `docs/plan/DISCREPANCIES.md`, make the smallest correction that preserves the approved
-  behaviour, and update every affected blueprint and task instruction in the same change.
-
-T26 removes this section and the `docs/plan/` directory. Everything above it is permanent.
