@@ -370,6 +370,17 @@ Agent chat endpoint: `POST /_agent-native/agent-chat` with `{ "message": "..." }
 - Framework UI catalogs: `dist/localization/core-messages/<code>.js`; English source
   `en-US.js` about 33 KB.
 - Locale metadata shape: `{ code, englishName, nativeName, dir: "ltr"|"rtl" }`.
+- The locale list is coupled to far more than `SUPPORTED_LOCALES` + one catalog. Verified on
+  upstream `main` (core 0.177.0) by T25: nine further exhaustive `Record<LocaleCode, …>` maps in
+  `packages/core` (`MCP_CONNECT_MESSAGES`, `MCP_SETTINGS_MESSAGES`, `AUTH_LOCALE_COPY`,
+  `NATIVE_AUTH_COPY`, `LANGUAGE_PICKER_COPY`, `errorCopy`, `FEEDBACK_COPY`, `BLOCK_COPY`,
+  `EXTENSIONS_COPY`), two coverage tests (`auth-marketing-locales.spec.ts` wants a tagline plus
+  matching feature bullets for all sixteen built-in marketing surfaces; `mcp-connect-content.spec.ts`
+  wants all seven MCP connect guides translated), nine first-party template aggregates that assert
+  `satisfies Record<LocaleCode, Messages>`, and a localized-docs coverage guard that fires once per
+  English doc. `pnpm guard:i18n-catalogs` does **not** require template catalogs for every locale —
+  `pnpm typecheck` is the gate that does. See `docs/plan/DISCREPANCIES.md` 2026-09-08 T25 and
+  `docs/plan/upstream-issues/nb-NO-pr.md`.
 
 ## F15. Telemetry and outbound calls
 
