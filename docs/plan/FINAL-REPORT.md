@@ -648,10 +648,15 @@ seventeen-step checklist; this is what is outstanding as of 2026-09-08.
 
 ### 6.4 Before the first real deployment
 
-15. **Produce the model-backed eval evidence.** Run `RUN_MODEL_EVALS=1 pnpm eval` with a real
+15. **Produce the model-backed eval evidence.** Run
+    `RUN_MODEL_EVALS=1 pnpm eval -- --out eval-evidence.json` with a real, funded
     `ANTHROPIC_API_KEY` and record correct target, successful tool result, persisted state, human
     approval behaviour and member denial. D27 is explicit that a skipped run is not model validation,
-    and this is the one release criterion this report cannot close.
+    and this is the one release criterion this report cannot close. Two defects found on the first
+    real attempt are fixed and recorded in `DISCREPANCIES.md` (2026-09-08): the `--json` report was
+    unparseable through a shell redirection, and `agent-native eval` supplied no system prompt, so
+    every Anthropic request was refused for caching an empty system block. A run that ends in a
+    per-eval `error` evaluated nothing, whatever the scores beside it say.
 16. **Rehearse a restore.** `bash scripts/restore-d1-check.sh <dump>` is the tested-by-guard test
     restore and it never touches production, but it has never been run against a real export. Do it
     once against a real staging dump before trusting the procedure.

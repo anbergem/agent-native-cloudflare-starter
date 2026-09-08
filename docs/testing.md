@@ -75,7 +75,7 @@ load-bearing as the application and easier to break silently.
 | `worker-smoke.test.mjs` | The smoke script's own argument handling and check selection |
 | `i18n-catalogs.test.mjs` | That two catalogs agreeing on a *broken* placeholder still fail the guard |
 | `bootstrap.test.mjs` | The bootstrap script against stub `wrangler`, `gh` and `pnpm` on a temporary PATH: the plan, idempotency, the exact argument arrays and JSON bodies, every refusal, and that no secret reaches stdout or stderr |
-| `eval-json.test.mjs` | That a model-backed `--json` run puts one JSON document on stdout and its preparation output on stderr, with every provider credential stripped so it makes no paid request |
+| `eval-json.test.mjs` | That a model-backed `--json` run puts one JSON document on stdout and its preparation output on stderr, that `--out` writes that document itself and still gates on the exit code, with every provider credential stripped so it makes no paid request |
 
 `bootstrap.test.mjs` is the pattern to copy for anything that drives a cloud CLI: the stubs
 record their argv and their stdin and answer from a small mutable world, so the test can assert
@@ -197,15 +197,27 @@ the right target, get a successful tool result, and leave the intended state beh
 pnpm eval                                       # all skipped, exits 0 — proves discovery only
 RUN_MODEL_EVALS=1 ANTHROPIC_API_KEY=… pnpm eval # the real thing
 
-# the release artifact — `node` directly, not `pnpm eval`
-RUN_MODEL_EVALS=1 node scripts/run-evals.mjs --json > eval-evidence.json
+# the release artifact
+RUN_MODEL_EVALS=1 pnpm eval -- --out eval-evidence.json
 ```
 
-The artifact command bypasses `pnpm` because `pnpm run` writes its `[ELIFECYCLE]` failure line to
-stdout, which corrupts the JSON document on precisely the runs worth recording.
-`tests/guards/eval-json.test.mjs` holds that stream clean: it runs the model-backed path with
-every provider credential stripped from the child environment, so engine resolution refuses before
-any request is made and the guard costs nothing.
+`--out` implies `--json` and writes the file from inside the script, never through a shell
+redirection: `pnpm run` writes its `[ELIFECYCLE]` failure line to stdout, which would corrupt the
+document on precisely the runs worth recording. `tests/guards/eval-json.test.mjs` holds both paths
+clean — it runs the model-backed path with every provider credential stripped from the child
+environment, so engine resolution refuses before any request is made and the guard costs nothing.
+
+`pnpm eval` runs `scripts/eval-suite.ts`, not `agent-native eval`. The CLI at 0.176.5 calls
+`runEvalSuite` without a `systemPrompt`, and the Anthropic engine then puts `cache_control` on an
+empty system block, which the API rejects — every eval fails with
+`system.0: cache_control cannot be set for empty text blocks` before the model is consulted. The
+driver supplies `instructions.runtime` from `agent-native.config.ts`, so the evals score the agent
+the app actually deploys, and mirrors the CLI's arguments, JSON shape and exit codes. See
+`docs/plan/upstream-issues/eval-system-prompt.md`.
+
+Read a report carefully: a scorer that asserts an *absence* passes vacuously when the agent never
+ran, so `no-mutations` and `persisted-state` can score 1 on a run that made no model call at all.
+A per-eval `error` field means nothing was evaluated, whatever the scores beside it say.
 
 `scripts/run-evals.mjs` creates a temporary SQLite database, applies `migrations/` and seeds the
 scenario **only** for `RUN_MODEL_EVALS=1`, and sets `NODE_OPTIONS=--import tsx` because

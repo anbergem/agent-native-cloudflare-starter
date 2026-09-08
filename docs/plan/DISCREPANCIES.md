@@ -1737,3 +1737,43 @@ the report carries prompts, model output and provider request ids and this repos
 
 Resolution: 2026-09-08 — all four applied. The guard fails on the pre-fix script with `stdout is
 not a single JSON document` and passes after, in ~7s with no network access.
+
+## 2026-09-08 T24 follow-up — `agent-native eval` evaluates an agent with no system prompt
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B12 and `docs/upgrade-playbook.md` step 10
+treat `pnpm eval` as the release gate on model behaviour, and D20 makes
+`agent-native.config.ts` `instructions.runtime` (`agent/AGENTS.md`) the deployed agent's system
+prompt.
+
+Observed: the first funded model-backed run failed all five evals identically, with the model never
+consulted:
+
+```
+400 invalid_request_error — system.0: cache_control cannot be set for empty text blocks
+```
+
+Three framework defaults compose to produce it. `dist/cli/eval.js` calls `runEvalSuite({ cwd,
+pattern, thresholdOverride })` without `systemPrompt`, though `RunEvalSuiteOptions` accepts one;
+`dist/eval/agent-runner.js` defaults it to `""`; and `dist/agent/engine/anthropic-engine.js` sets
+`cache_control` on `systemBlocks[0]` unconditionally when caching is on, which for an empty prompt
+is `cache_control` on an empty text block. The API rejects it.
+
+Impact: worse than a failed gate. `agent-native eval` cannot evaluate any Anthropic-backed app at
+0.176.5, and even with the 400 fixed it would score an agent this repository does not ship — tool
+choice, the `send-job-to-accounting` approval gate and the member denial all live in the runtime
+instructions. The vacuous scorers make the failure look partial: `no-mutations` and
+`persisted-state` scored 1 because nothing ran, so two evals reported `avgScore: 0.333`.
+
+Proposed handling: `scripts/eval-suite.ts` calls `runEvalSuite` directly with `systemPrompt` read
+from `instructions.runtime`, refusing with a named file rather than sending an empty prompt, and
+mirrors the CLI's arguments, output shape and exit codes (including `total === 0` exiting 0 so an
+app without evals does not fail CI). `scripts/run-evals.mjs` invokes it instead of
+`agent-native eval`. `tests/guards/eval-json.test.mjs` gains the invariant that the resolved
+instructions file is non-empty, since an empty one is the sole input that reproduces the 400.
+Drafted upstream as `docs/plan/upstream-issues/eval-system-prompt.md` with both fixes described:
+the engine should not cache an empty block, and the CLI should pass the app's own instructions.
+
+Resolution: 2026-09-08 — applied; `pnpm check` passes with 43 guard tests. The 400 itself is
+reproduced and diagnosed from the framework source, but the fix is confirmed only as far as a
+credential-free run can go: the paid run that proves the model now receives the prompt is the
+maintainer's, and until it is green the release evidence stays pending.
