@@ -121,6 +121,16 @@ feat(i18n): add Norwegian Bokmål (nb-NO) locale
 > | `pnpm typecheck` | clean, all workspaces |
 > | `pnpm guards` | `[guards] All 70 checks passed` (includes `guard:i18n-catalogs` and `guard:i18n-changed-copy`) |
 > | core locale suites (12 files, 146 tests) | all pass |
+> | `packages/core` suite, `run-code.spec.ts` excluded | 976/980 files, 14 211/14 221 tests pass |
+>
+> The ten remaining failures are environmental, not regressions. Eight are in
+> `src/coding-tools/*` and fail identically on a detached checkout of `upstream/main` at
+> `8a33f82a0` (21 failures there, a superset, because `run-code.spec.ts` is included) — the
+> sandboxed subprocess cannot open sockets on this machine. Two are in `src/server/auth.spec.ts`
+> and are a parallel-run resource conflict, not an assertion failure:
+> `PGlite database directory "./data/pglite" is already owned by process <pid>`. Run on its own,
+> `src/server/auth.spec.ts` passes 239/239 on the branch. This change touches no auth logic — only
+> the `NATIVE_AUTH_COPY` and `AUTH_LOCALE_COPY` string tables.
 >
 > Catalog parity was checked directly as well: `nb-NO` has 578 keys, `en-US` has 578, no missing and
 > no extra keys, and the ten values that are byte-identical to English are legitimately identical in
@@ -166,6 +176,11 @@ feat(i18n): add Norwegian Bokmål (nb-NO) locale
    run unmodified; on Node 26 export
    `NODE_OPTIONS=--localstorage-file=$(mktemp -t an-ls)` first. This is unrelated to the change —
    the same suites fail the same way on unmodified `upstream/main` under Node 26.
+
+   `src/coding-tools/*` needs a sandboxed subprocess that can open sockets; those suites fail on
+   unmodified `upstream/main` in a network-restricted environment. `src/server/auth.spec.ts` can
+   lose a race for `./data/pglite` in a fully parallel run of the whole package; it passes 239/239
+   on its own.
 
 3. **Decide on the template type change.** Either keep it in this PR (it is what makes the locale
    addable at all) or ask for it as a separate preparatory PR titled something like
