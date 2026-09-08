@@ -280,3 +280,19 @@ The maintainer authorized the repository review corrections and continued implem
 - Framework compatibility patches remain bounded exceptions. Each upgrade verifies an actual
   Worker action flow, not only a patch match count. More runtime surgery requires reassessing
   the Node/libSQL fallback before adopting it as a new permanent template requirement.
+
+## D28 — One-shot bootstrap script in Node (2026-09-08)
+
+Context: the maintainer asked whether a cross-platform script could perform the whole
+post-template setup, including placing secrets.
+Decision: `scripts/bootstrap.mjs` (Node, not PowerShell) performs every automatable step from a
+git-ignored input file: D1 creation in the EU jurisdiction, Wrangler config ids and URLs, the
+first deployment when needed, Worker secrets per environment (generated signing secrets never
+touch disk), GitHub environments with reviewers, GitHub secrets and variables, branch
+protection, template flag. It prints a plan by default and requires `--yes` to create cloud
+resources (spec section 43 forbids silent creation). Steps that cannot be automated stay manual
+and are printed at the end: Workers Paid plan, the Cloudflare API token itself, the Google OAuth
+client, the Renovate app, the first sign-in.
+Consequences: `docs/bootstrap.md` documents the script first and the manual steps second; a
+guard test drives the script against stub `wrangler`/`gh` executables so it is verified without
+cloud access.
