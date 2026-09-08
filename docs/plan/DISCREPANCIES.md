@@ -1622,3 +1622,82 @@ Verified: `pnpm check` exits 0 on the renamed tree, and the diff touches only th
 contained one of the two strings.
 
 Resolution: 2026-09-08 — T24 step 1 records the reformatting step and why.
+
+## 2026-09-08 T25 — adding a framework locale is a repo-wide change upstream, not a five-file edit
+
+Expected (plan reference): `docs/plan/02-framework-facts.md` F14 and
+`docs/plan/tasks/T25-norwegian-upstream.md` steps 2–3 describe adding a locale as: extend
+`SUPPORTED_LOCALES` and `LOCALE_METADATA` in `dist/localization/shared.js`, add
+`core-messages/<code>.ts`, register the loader in `coreMessageLoaders`, and update the
+`internationalization.mdx` locale list. Step 2 says explicitly "do not add template catalogs; the
+framework's own UI catalog is enough for a first PR unless the repository's guard requires template
+parity — check `pnpm guard:i18n-catalogs` output".
+
+Observed: on `upstream/main` at `8a33f82a0` (`@agent-native/core` 0.177.0), the guard indeed does
+not require template catalogs — `checkCatalogDir` in `scripts/guard-i18n-catalogs.ts` only compares
+locale files that exist. `pnpm typecheck` is the real gate, and it fails much more widely:
+
+- Inside `packages/core`, nine further maps are exhaustive over `LocaleCode` and each needs an
+  `nb-NO` entry: `MCP_CONNECT_MESSAGES` and `MCP_SETTINGS_MESSAGES`
+  (`src/localization/mcp-settings-messages.ts:44,556`), `AUTH_LOCALE_COPY`
+  (`src/server/onboarding-html.ts:238`, ~96 keys), `NATIVE_AUTH_COPY`
+  (`src/shared/auth-copy.ts:46`), `LANGUAGE_PICKER_COPY` (`src/client/i18n.tsx:161`), `errorCopy`
+  (`src/client/ErrorBoundary.tsx:27`), `FEEDBACK_COPY` (`src/client/FeedbackButton.tsx:40`),
+  `BLOCK_COPY` (`src/client/blocks/library/block-copy.ts:7`) and `EXTENSIONS_COPY`
+  (`src/client/extensions/ExtensionsSidebarSection.tsx:123`).
+- Two core unit tests demand more than the catalog: `src/server/auth-marketing-locales.spec.ts`
+  requires a tagline plus a matching number of feature bullets for all sixteen built-in marketing
+  surfaces in every non-English locale, and `src/shared/mcp-connect-content.spec.ts` requires all
+  seven MCP connect guides to be translated with placeholders preserved.
+- After rebuilding core so templates see the widened union, `pnpm typecheck` reported 65 errors in
+  ten templates plus `packages/docs`. The cause is that nine templates assert their catalog
+  aggregates exhaustively (`} satisfies Record<LocaleCode, Messages>;` in
+  `templates/*/app/i18n-data.ts`, plus variants over `Exclude<LocaleCode, "en-US">`). Satisfying
+  those assertions would mean translating every first-party template app in the same change;
+  `templates/design/app/i18n-data.ts` alone is about 16 800 lines.
+- `guard:i18n-catalogs` also walks `SUPPORTED_LOCALES` for localized documentation coverage, so a
+  brand-new locale produces 201 coverage findings (one per English doc under
+  `packages/core/docs/content`). The guard's own sanctioned mechanism for reviewed debt is
+  `UPDATE_I18N_DOC_COVERAGE_BASELINE=1`; the other ten locales each already carry 65–66 such rows.
+
+Impact: T25 steps 2–4. F14's "closed locale list" bullet understates the coupling; the upstream
+branch is much larger than the plan assumed, and the "no template catalogs" instruction only holds
+if the template maps stop asserting exhaustiveness.
+
+Proposed handling: the fork branch keeps the plan's intent — real Norwegian translations for the
+framework's own UI, no machine-translated template catalogs — and additionally relaxes the template
+and docs-site maps to `Partial<Record<LocaleCode, …>>` (kept as `satisfies`, so every present
+locale stays exactly typed) with the locale-keyed override loops reading through a `Partial` view.
+That makes the existing `if (!messages) continue` fallbacks type-checked instead of resolving to
+`any`, and means a supported locale a template has no catalog for falls back to its source locale
+rather than blocking the framework's locale list. The 201 docs-coverage rows were added to
+`scripts/i18n-localized-doc-coverage-baseline.txt` with the reason stated in the changeset and in
+`docs/plan/upstream-issues/nb-NO-pr.md`; no other locale's rows changed. The review document flags
+the template type change as separable so the maintainer can ask for it as its own upstream PR. No
+change to this repository's product scope, security policy or deployment architecture.
+
+Resolution: 2026-09-08 — on the fork branch `pnpm fmt:check`, `pnpm typecheck` and `pnpm guards`
+(70 checks) all pass, and the twelve core locale suites (146 tests) pass. `F14` is updated to
+record the full coupling for the next reader.
+
+## 2026-09-08 T25 — upstream `main` is ahead of the pinned framework version
+
+Expected (plan reference): `docs/plan/02-framework-facts.md` records verified facts about
+Agent-Native 0.176.5, which `package.json` pins.
+
+Observed: `upstream/main` at `8a33f82a0` builds `@agent-native/core` 0.177.0. The i18n mechanism
+itself is unchanged between the two — `SUPPORTED_LOCALES`, `LOCALE_METADATA`, the
+`core-messages/<code>.ts` catalogs, `coreMessageLoaders`, the `{ code, englishName, nativeName,
+dir }` metadata shape and `set-localization-preference` deriving its validation from
+`SUPPORTED_LOCALES` all match F14 exactly. What F14 did not record is the additional
+`Record<LocaleCode, …>` maps and locale-coverage tests listed in the entry above; those exist in
+0.176.5 too.
+
+Impact: none on the starter's pin. T25 based its branch on upstream `main`, as instructed.
+
+Proposed handling: no version change in this repository. F14 gains a note that the locale list is
+coupled to more than the four places it named, so a future upgrade or a second upstream attempt
+starts from the real inventory.
+
+Resolution: 2026-09-08 — F14 updated; the pin stays at 0.176.5 until the locale ships in a release
+(see `docs/plan/upstream-issues/nb-NO-pr.md`).
