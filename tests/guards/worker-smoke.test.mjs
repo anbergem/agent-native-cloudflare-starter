@@ -13,6 +13,33 @@ import {
   runSmoke,
 } from "../../scripts/worker-smoke.mjs";
 
+/**
+ * Waits until `process.kill(pid, 0)` reports `ESRCH`, then asserts it. Fails with the same
+ * message an immediate assertion would once the deadline passes, so a process that genuinely
+ * survives still fails the test.
+ * @param {number} pid
+ * @param {number} [timeoutMs]
+ */
+async function waitForNoSuchProcess(pid, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      assert.equal(
+        /** @type {NodeJS.ErrnoException} */ (error).code,
+        "ESRCH",
+        `process ${pid} is not ours`,
+      );
+      return;
+    }
+    if (Date.now() >= deadline) {
+      assert.fail(`process ${pid} was still alive after ${timeoutMs}ms`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 test("production accepts no QA credentials", () => {
   const parsed = parseOptions([
     "--base-url",
@@ -194,6 +221,11 @@ child.unref();`,
     });
     await launcherExited;
     await terminateProcessGroup(launcher, 100);
-    assert.throws(() => process.kill(childPid, 0), { code: "ESRCH" });
+    // `terminateProcessGroup` waits for the process *group* to disappear, and the child this
+    // test watches is reparented to init when its launcher exits, so it is reaped a moment
+    // later. Poll rather than assert instantly: the property under test is that the child is
+    // terminated, not that the kernel has already finished the bookkeeping. Asserting
+    // immediately made this test fail under load once the parallel bootstrap guard was added.
+    await waitForNoSuchProcess(childPid);
   },
 );
