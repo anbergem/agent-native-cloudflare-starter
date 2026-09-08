@@ -1584,3 +1584,41 @@ only the moment it is measured. Four consecutive `pnpm test:guards` runs pass.
 
 Resolution: 2026-09-08 — fixed in `tests/guards/worker-smoke.test.mjs`; the reason is recorded
 in a comment at the assertion so it is not "simplified" back.
+
+## 2026-09-08 T24 — a rename changes where `oxfmt` breaks a line, so the script has to reformat what it rewrote
+
+Expected (plan reference): `docs/plan/tasks/T24-bootstrap.md` step 1 and its acceptance —
+"`pnpm check` must still pass on the renamed tree before reverting".
+
+Observed: it did not. Replacing `example-jobs` with a shorter name shortens the lines that
+contain it, and `oxfmt` 0.66.0 has an opinion about where a call breaks. After
+`node scripts/rename-app.mjs --name acme-ops --display "Acme Ops"`:
+
+```
+$ pnpm check
+scripts/verify-worker.mjs (0ms)
+Format issues found in above 1 files. Run without `--check` to fix.
+```
+
+The offending line was `mkdtempSync(path.join(tmpdir(), "example-jobs-worker-smoke-"))`, which
+oxfmt had wrapped across three lines at 80 characters and which fits on one as
+`"acme-ops-worker-smoke-"`. A longer display name has the same effect in the other direction.
+This is the same collision `2026-09-06 T06 — a naively generated migrations-manifest.ts fails
+oxfmt --check` recorded: a generator writing valid TypeScript that the repository's own
+formatter then disagrees with.
+
+Impact: T24 step 1's acceptance, for any name whose length differs from `example-jobs`'s —
+which is every real name.
+
+Proposed handling: the same resolution T06 chose, for the same reason. `scripts/rename-app.mjs`
+runs the repository's own `node_modules/.bin/oxfmt --write` over the files it rewrote, rather
+than duplicating oxfmt's line-breaking rule, and reports how many it reformatted. It reads
+`ignorePatterns` out of `.oxfmtrc.json` instead of hard-coding it, so a file oxfmt does not own
+— anything under `docs/`, for instance — is never handed to it, and it filters to the
+extensions oxfmt formats (`.sh` is not one). A production-only install has no oxfmt; the
+rewritten files are then left as they are and the script says it reformatted none.
+
+Verified: `pnpm check` exits 0 on the renamed tree, and the diff touches only the 24 files that
+contained one of the two strings.
+
+Resolution: 2026-09-08 — T24 step 1 records the reformatting step and why.

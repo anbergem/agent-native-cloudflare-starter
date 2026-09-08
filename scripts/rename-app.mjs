@@ -20,7 +20,14 @@
 // `.react-router`, `data`, `pnpm-lock.yaml`) are excluded for the same reason a build output
 // is not source: the next build regenerates them from the renamed source.
 
-import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -55,6 +62,19 @@ const SKIP_PATHS = new Set([
   // This file: the two strings below are what it searches *for*. Rewriting them would leave a
   // script that can never be run again, and could not be reverted by running it backwards.
   "scripts/rename-app.mjs",
+]);
+
+/** The subset of the extensions below that `oxfmt` formats, and that a rename can therefore
+ * push over `printWidth`. `.sh` is not one of them. */
+const FORMATTED_EXTENSIONS = new Set([
+  ".jsonc",
+  ".json",
+  ".md",
+  ".mjs",
+  ".ts",
+  ".tsx",
+  ".yaml",
+  ".yml",
 ]);
 
 /** Only text this repository owns. A file type not listed here is never touched. */
@@ -186,15 +206,67 @@ function main() {
     return;
   }
 
+  const formatted = values["dry-run"] ? 0 : format(changed);
+
   console.log(
     `rename-app: ${FROM_NAME} -> ${name}, "${FROM_DISPLAY}" -> "${display}" in ${changed.length} file(s)`,
   );
   for (const relative of changed.sort()) console.log(`  ${relative}`);
+  if (formatted > 0) {
+    console.log(`rename-app: reformatted ${formatted} of them with oxfmt`);
+  }
   console.log(
     values["dry-run"]
       ? "rename-app: --dry-run, nothing was written"
       : "rename-app: review `git diff`, then run `pnpm check` before committing.",
   );
+}
+
+/**
+ * Runs the repository's own formatter over the rewritten files.
+ *
+ * A name of a different length changes where `oxfmt` breaks a line — replacing
+ * `example-jobs-worker-smoke-` with something shorter lets a three-line call collapse onto
+ * one, and `oxfmt --check` (part of `pnpm lint`, part of `pnpm check`) then fails on a file
+ * this script wrote. Formatting here rather than duplicating oxfmt's line-breaking rule is
+ * the same choice `scripts/gen-migrations-manifest.mjs` made for the same reason.
+ *
+ * `.oxfmtrc.json`'s own `ignorePatterns` are read rather than hard-coded, so a file oxfmt does
+ * not own — anything under `docs/`, for instance — is never handed to it. A production-only
+ * install has no oxfmt; the rewritten files are then left as they are and the count is 0.
+ * @param {string[]} changed
+ */
+function format(changed) {
+  const binary = path.join(repoRoot, "node_modules", ".bin", "oxfmt");
+  if (!existsSync(binary)) return 0;
+  /** @type {string[]} */
+  let ignore = [];
+  try {
+    ignore = JSON.parse(
+      readFileSync(path.join(repoRoot, ".oxfmtrc.json"), "utf8"),
+    ).ignorePatterns;
+  } catch {
+    return 0;
+  }
+  const owned = changed.filter((relative) => {
+    const [first] = relative.split(path.sep);
+    return (
+      !ignore.includes(/** @type {string} */ (first)) &&
+      FORMATTED_EXTENSIONS.has(path.extname(relative))
+    );
+  });
+  if (owned.length === 0) return 0;
+  const result = spawnSync(binary, ["--write", ...owned], {
+    cwd: repoRoot,
+    stdio: "ignore",
+  });
+  if (result.status !== 0) {
+    console.error(
+      "rename-app: oxfmt failed on the rewritten files; run `pnpm lint` and fix them by hand",
+    );
+    return 0;
+  }
+  return owned.length;
 }
 
 main();

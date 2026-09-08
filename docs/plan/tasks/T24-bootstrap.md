@@ -94,7 +94,11 @@ Depends on: T23. Read: F6, F10; B13, B14, B19, B20; D04, D11, D15, D18, D21, D22
    because it holds `agent-native-cloudflare-starter` and no string replacement would reach it.
    `--dry-run` lists without writing. Refuses names that are not `^[a-z][a-z0-9-]{2,40}$`, and a
    display name that is empty, over 60 characters, or contains a quote, a backslash or a
-   newline.
+   newline. Finally it runs the repository's own `oxfmt --write` over the files it rewrote: a
+   name of a different length changes where oxfmt breaks a line, so without this `pnpm check`
+   fails on a file the script wrote (see `DISCREPANCIES.md`, 2026-09-08 — the same collision
+   T06 hit with the generated migrations manifest). `.oxfmtrc.json`'s `ignorePatterns` are read
+   rather than hard-coded, so a file oxfmt does not own is never handed to it.
 2. `scripts/bootstrap-org.mjs --env <env> --name "<Org>" --owner <email>`: inserts the
    organization and its owner membership through `wrangler d1 execute <APP_NAME>-<env> --remote
    --env <env> --yes --command`, with every NOT NULL column from F6 and
