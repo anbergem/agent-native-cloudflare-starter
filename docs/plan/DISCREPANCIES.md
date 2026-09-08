@@ -1835,3 +1835,38 @@ context included, or export `runtime-context` so a caller can.
 Resolution: 2026-09-08 — applied; `pnpm check` passes with 43 guard tests. The five evals' own
 outcome after these changes needs another funded run: `complete-job` and `undo` are confirmed
 green, and the other three are corrected but unproven.
+
+## 2026-09-08 T24 follow-up — release evidence produced: 5/5
+
+Expected (plan reference): D27 and `docs/upgrade-playbook.md` step 10 require a model-backed eval
+run as release evidence; `FINAL-REPORT.md` §4.7 recorded it as the one open release criterion.
+
+Observed: after the three fixes in the entries above, the maintainer's funded run on
+`claude-sonnet-5` returned `ok: true` — 5 total, 5 passed, 0 failed, 0 skipped, every scorer 1. The
+artifact came out as parseable JSON through `--out`, confirming the stream fixes on a real run
+(three writers had shared stdout: the migration steps, pnpm's epilogue and the app's own action
+log).
+
+What the traces show, beyond the scores: `send-job-to-accounting` was **called** and the side
+effect withheld with "Awaiting human approval … did NOT execute", which is the behaviour rule 5 of
+`agent/AGENTS.md` now asks for and the opposite of what the pre-fix instructions produced;
+`archive-customer` was attempted and refused with
+`Role member may not customers:archive (errorCode: AUTHORIZATION)`, and the agent explained the
+role requirement rather than retrying; `list-jobs` answered "no jobs are scheduled for today,
+September 6, 2026" — the pinned `FIXTURE_CLOCK` date, resolved to an explicit calendar date, with
+an empty array and no mutating call.
+
+Impact: the release criterion is closed, and the definition-of-done line on agent parity loses its
+caveat: the agent half is no longer structural. The tally stays 16 of 17 met with 1 pending on the
+`is_template` setting, but with 7 caveats rather than 8.
+
+One residual wrinkle, recorded rather than fixed: the evals pin the agent's `<runtime-context>`
+date to `FIXTURE_CLOCK` while the application's own timestamps come from the real clock, so a
+transcript can show a `completedAt` that disagrees with the agent's notion of "today". It does not
+affect any assertion. Injecting the clock through the container would remove it, if determinism
+there ever matters.
+
+Resolution: 2026-09-08 — `FINAL-REPORT.md` §4.7, follow-up 15, risk 1 and the definition-of-done
+table updated with the run and the five recorded behaviours. Re-run after any change to
+`agent/AGENTS.md`, the action descriptions or the framework pin: a model update can change the
+result with no change to this repository, so a stale eval result is no result.
