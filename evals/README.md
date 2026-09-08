@@ -14,6 +14,19 @@ A model-backed run needs a provider credential and owns its own database, so no
 RUN_MODEL_EVALS=1 ANTHROPIC_API_KEY=... pnpm eval
 ```
 
+To keep the report as release evidence, invoke the script directly rather than through
+`pnpm eval`:
+
+```bash
+RUN_MODEL_EVALS=1 node scripts/run-evals.mjs --json > eval-evidence.json
+```
+
+`pnpm run` writes `[ELIFECYCLE] Command failed with exit code 1.` to **stdout** when a script
+exits non-zero, which appends a line after the closing brace on exactly the runs worth keeping.
+Nothing inside this script can suppress that, so the artifact comes from `node` directly.
+`eval-evidence*.json` is git-ignored: the report carries prompts, model output and provider
+request ids.
+
 `scripts/run-evals.mjs` creates a temporary SQLite database, applies `migrations/`, seeds the
 deterministic scenario (B12), and runs `agent-native eval` as
 `AGENT_USER_EMAIL=member1@example.invalid` in `AGENT_ORG_ID=org_acme` unless the environment

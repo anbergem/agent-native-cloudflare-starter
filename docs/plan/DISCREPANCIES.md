@@ -1701,3 +1701,39 @@ starts from the real inventory.
 
 Resolution: 2026-09-08 — F14 updated; the pin stays at 0.176.5 until the locale ships in a release
 (see `docs/plan/upstream-issues/nb-NO-pr.md`).
+
+## 2026-09-08 T24 follow-up — a `--json` eval run wrote an unparseable artifact
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B12 and `evals/README.md` make
+`agent-native eval --json` the machine-readable report, and `docs/upgrade-playbook.md` step 10
+asks for the model-backed run to be recorded as release evidence. The obvious way to record it is
+to redirect that report to a file.
+
+Observed: `RUN_MODEL_EVALS=1 pnpm eval -- --json > eval-evidence.json` produces a file that no
+JSON parser accepts. Two writers share the stream:
+
+1. `scripts/run-evals.mjs` spawns the migration and seed steps with `stdio: "inherit"`, so their
+   own progress lines (`applied 0001_init.sql`, `applied 0002_job_accounting.sql`) land on stdout
+   ahead of the document. These run only under `RUN_MODEL_EVALS=1`, which is why a skipped run
+   looks clean and the defect was invisible until the first real run.
+2. pnpm writes `[ELIFECYCLE] Command failed with exit code 1.` to **stdout**, not stderr, when a
+   `pnpm run` script exits non-zero — so it appends a line after the closing brace on exactly the
+   runs whose evidence matters most. Its `$ node scripts/run-evals.mjs` banner goes to stderr, and
+   a passing run is unaffected.
+
+Impact: the one release criterion `FINAL-REPORT.md` §4.7 leaves open cannot be recorded by the
+documented command. Nothing about the evals themselves is wrong; the report content was correct
+inside the corrupted envelope.
+
+Proposed handling: (1) route the preparation steps' stdout to fd 2 in `scripts/run-evals.mjs`, so
+only `agent-native eval` writes to stdout; (2) document `node scripts/run-evals.mjs --json` rather
+than `pnpm eval -- --json` for the artifact, since pnpm's epilogue cannot be suppressed from
+inside the script; (3) add `tests/guards/eval-json.test.mjs`, which runs the model-backed path with
+every provider credential stripped from the child environment — `resolveEngine` then refuses before
+any request, so the guard exercises migration, seeding and `--json` without a paid call — and
+asserts stdout parses, all five evals ran, and the `applied …` lines moved to stderr; (4) ignore
+`eval-evidence*.json` and add it to the `check-config-hygiene.mjs` must-stay-ignored list, because
+the report carries prompts, model output and provider request ids and this repository is public.
+
+Resolution: 2026-09-08 — all four applied. The guard fails on the pre-fix script with `stdout is
+not a single JSON document` and passes after, in ~7s with no network access.

@@ -21,8 +21,18 @@ const env = {
   NODE_OPTIONS: "--import tsx",
 };
 
-function run(args) {
-  const result = spawnSync("pnpm", args, { cwd: root, env, stdio: "inherit" });
+// `--json` makes this script's stdout a single JSON document, and a release
+// artifact is produced by redirecting it to a file. The preparation steps below
+// print progress of their own ("applied 0001_init.sql"), which lands in that
+// redirect ahead of the document and makes it unparseable, so their stdout goes
+// to this process's stderr (fd 2) instead. Only `agent-native eval` writes to
+// stdout. See DISCREPANCIES.md, 2026-09-08.
+function run(args, { stdout = "inherit" } = {}) {
+  const result = spawnSync("pnpm", args, {
+    cwd: root,
+    env,
+    stdio: ["inherit", stdout, "inherit"],
+  });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exitCode = result.status ?? 1;
   return result.status === 0;
@@ -34,8 +44,9 @@ try {
   // not.
   // guard:allow-env-credential — test-only run switch, not a credential
   if (process.env.RUN_MODEL_EVALS === "1") {
-    if (!run(["exec", "node", "scripts/migrate-local.mjs"])) process.exit();
-    if (!run(["exec", "tsx", "tests/fixtures/seed-sql-only.ts"]))
+    if (!run(["exec", "node", "scripts/migrate-local.mjs"], { stdout: 2 }))
+      process.exit();
+    if (!run(["exec", "tsx", "tests/fixtures/seed-sql-only.ts"], { stdout: 2 }))
       process.exit();
   }
   run(["exec", "agent-native", "eval", ...process.argv.slice(2)]);
