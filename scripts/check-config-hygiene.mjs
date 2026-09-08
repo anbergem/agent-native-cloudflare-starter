@@ -244,9 +244,16 @@ for (const file of placeholderFiles) {
   }
 }
 
-// The real files must stay out of git. `git check-ignore -q` rejects more than one pathname
-// ("fatal: --quiet is only valid with a single pathname"), so ask about one file at a time.
-for (const file of [".env", ".dev.vars", ".bootstrap.env"]) {
+// The real files must stay out of git: the three secret inputs, and the eval report, which
+// carries prompts, model output and provider request ids. `git check-ignore -q` rejects more
+// than one pathname ("fatal: --quiet is only valid with a single pathname"), so ask about one
+// file at a time.
+for (const file of [
+  ".env",
+  ".dev.vars",
+  ".bootstrap.env",
+  "eval-evidence.json",
+]) {
   try {
     execFileSync("git", ["check-ignore", "-q", file], { cwd: repoRoot });
   } catch {

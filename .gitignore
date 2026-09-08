@@ -63,6 +63,11 @@ tests/e2e/.auth/
 test-results/
 playwright-report/
 
+# Eval evidence (T24 follow-up): a model-backed run's JSON report carries prompts,
+# model output and provider request ids. Record the outcome in the release notes,
+# not the raw artifact.
+eval-evidence*.json
+
 # Learnings (personal preferences and memory — use learnings.defaults.md for tracked defaults)
 learnings.md
 

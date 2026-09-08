@@ -1701,3 +1701,172 @@ starts from the real inventory.
 
 Resolution: 2026-09-08 — F14 updated; the pin stays at 0.176.5 until the locale ships in a release
 (see `docs/plan/upstream-issues/nb-NO-pr.md`).
+
+## 2026-09-08 T24 follow-up — a `--json` eval run wrote an unparseable artifact
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B12 and `evals/README.md` make
+`agent-native eval --json` the machine-readable report, and `docs/upgrade-playbook.md` step 10
+asks for the model-backed run to be recorded as release evidence. The obvious way to record it is
+to redirect that report to a file.
+
+Observed: `RUN_MODEL_EVALS=1 pnpm eval -- --json > eval-evidence.json` produces a file that no
+JSON parser accepts. Two writers share the stream:
+
+1. `scripts/run-evals.mjs` spawns the migration and seed steps with `stdio: "inherit"`, so their
+   own progress lines (`applied 0001_init.sql`, `applied 0002_job_accounting.sql`) land on stdout
+   ahead of the document. These run only under `RUN_MODEL_EVALS=1`, which is why a skipped run
+   looks clean and the defect was invisible until the first real run.
+2. pnpm writes `[ELIFECYCLE] Command failed with exit code 1.` to **stdout**, not stderr, when a
+   `pnpm run` script exits non-zero — so it appends a line after the closing brace on exactly the
+   runs whose evidence matters most. Its `$ node scripts/run-evals.mjs` banner goes to stderr, and
+   a passing run is unaffected.
+
+Impact: the one release criterion `FINAL-REPORT.md` §4.7 leaves open cannot be recorded by the
+documented command. Nothing about the evals themselves is wrong; the report content was correct
+inside the corrupted envelope.
+
+Proposed handling: (1) route the preparation steps' stdout to fd 2 in `scripts/run-evals.mjs`, so
+only `agent-native eval` writes to stdout; (2) document `node scripts/run-evals.mjs --json` rather
+than `pnpm eval -- --json` for the artifact, since pnpm's epilogue cannot be suppressed from
+inside the script; (3) add `tests/guards/eval-json.test.mjs`, which runs the model-backed path with
+every provider credential stripped from the child environment — `resolveEngine` then refuses before
+any request, so the guard exercises migration, seeding and `--json` without a paid call — and
+asserts stdout parses, all five evals ran, and the `applied …` lines moved to stderr; (4) ignore
+`eval-evidence*.json` and add it to the `check-config-hygiene.mjs` must-stay-ignored list, because
+the report carries prompts, model output and provider request ids and this repository is public.
+
+Resolution: 2026-09-08 — all four applied. The guard fails on the pre-fix script with `stdout is
+not a single JSON document` and passes after, in ~7s with no network access.
+
+## 2026-09-08 T24 follow-up — `agent-native eval` evaluates an agent with no system prompt
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B12 and `docs/upgrade-playbook.md` step 10
+treat `pnpm eval` as the release gate on model behaviour, and D20 makes
+`agent-native.config.ts` `instructions.runtime` (`agent/AGENTS.md`) the deployed agent's system
+prompt.
+
+Observed: the first funded model-backed run failed all five evals identically, with the model never
+consulted:
+
+```
+400 invalid_request_error — system.0: cache_control cannot be set for empty text blocks
+```
+
+Three framework defaults compose to produce it. `dist/cli/eval.js` calls `runEvalSuite({ cwd,
+pattern, thresholdOverride })` without `systemPrompt`, though `RunEvalSuiteOptions` accepts one;
+`dist/eval/agent-runner.js` defaults it to `""`; and `dist/agent/engine/anthropic-engine.js` sets
+`cache_control` on `systemBlocks[0]` unconditionally when caching is on, which for an empty prompt
+is `cache_control` on an empty text block. The API rejects it.
+
+Impact: worse than a failed gate. `agent-native eval` cannot evaluate any Anthropic-backed app at
+0.176.5, and even with the 400 fixed it would score an agent this repository does not ship — tool
+choice, the `send-job-to-accounting` approval gate and the member denial all live in the runtime
+instructions. The vacuous scorers make the failure look partial: `no-mutations` and
+`persisted-state` scored 1 because nothing ran, so two evals reported `avgScore: 0.333`.
+
+Proposed handling: `scripts/eval-suite.ts` calls `runEvalSuite` directly with `systemPrompt` read
+from `instructions.runtime`, refusing with a named file rather than sending an empty prompt, and
+mirrors the CLI's arguments, output shape and exit codes (including `total === 0` exiting 0 so an
+app without evals does not fail CI). `scripts/run-evals.mjs` invokes it instead of
+`agent-native eval`. `tests/guards/eval-json.test.mjs` gains the invariant that the resolved
+instructions file is non-empty, since an empty one is the sole input that reproduces the 400.
+Drafted upstream as `docs/plan/upstream-issues/eval-system-prompt.md` with both fixes described:
+the engine should not cache an empty block, and the CLI should pass the app's own instructions.
+
+Resolution: 2026-09-08 — applied; `pnpm check` passes with 43 guard tests. The 400 itself is
+reproduced and diagnosed from the framework source, but the fix is confirmed only as far as a
+credential-free run can go: the paid run that proves the model now receives the prompt is the
+maintainer's, and until it is green the release evidence stays pending.
+
+## 2026-09-08 T24 follow-up — the first real eval results: three failures, three different causes
+
+Expected (plan reference): B12's five evals are the release gate on model behaviour, and
+`agent/AGENTS.md` (D20) is the agent's contract.
+
+Observed: with the system prompt supplied (previous entry), the agent ran for the first time and
+two evals passed outright — `complete-job` and `undo` at 1.0 on every scorer. The other three
+failed for three unrelated reasons, none of which is the model behaving badly:
+
+1. **`accounting-approval` — the instructions defeated the framework's approval gate.** Rule 4
+   said "always ask before `send-job-to-accounting` … wait for a clear yes", so the agent asked in
+   the conversation and never called the action. But `needsApproval: true` *is* the approval
+   mechanism: `production-agent.ts` intercepts the call, performs no side effect, and returns
+   "Awaiting human approval to run … a human must approve this specific call before it can run."
+   The human then approves that call with its arguments. Asking in prose approves a sentence
+   instead, and the export never happens — so this was a production-behaviour defect, not an eval
+   artefact. Rule 4 is split: archiving still asks first; `send-job-to-accounting` is now
+   "approved by calling it, not by asking first", with the pause reported and no retry.
+2. **`member-denial` — the eval scored the wrong thing.** Its prompt was a bare "Archive customer
+   cus_b.", which rule 4 legitimately answers with a question, so a compliant agent never reached
+   the authorization check the eval exists to prove. The eval now seeds the confirmation exchange
+   in `input.history`, leaving the denial as the only thing under test.
+3. **`list-today` — the eval harness is not the deployed agent.** `production-agent.ts` prepends
+   `buildRuntimeContextPrompt`'s `<runtime-context>` block (current date, and "use this as
+   authoritative for relative dates such as today") and injects a per-turn `<current-time>` block
+   into the user message. `createAgentRunner` passes the system prompt through untouched, so the
+   evaluated agent had no idea what "today" was — while rule 3 forbids inventing dates. It spent
+   30s and never called `list-jobs`. `scripts/eval-suite.ts` now appends that block, pinned to
+   `FIXTURE_CLOCK` (exported from the scenario, previously only named in a comment) so a
+   date-relative eval is reproducible rather than dependent on the day it runs; `EVAL_NOW`
+   overrides it. The block is reproduced in the driver because `runtime-context` is not in the
+   framework's export map — a deep import is refused with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+
+Two further observations from the same run. The app's own action log (`logAction`, B16) writes one
+JSON line per action call to **stdout**, so it corrupted the artifact exactly as the migration
+lines had — a third writer on the same stream, and one that `--out` could not have escaped either,
+since it captures the child's stdout. The driver now owns stdout: `console.log` is redirected to
+stderr and the report is written with `process.stdout.write`. And an `EvalResultRow` keeps only
+names and numbers, so "Agent never called `list-jobs`" was the entire diagnosis available for a
+paid run; the helper scorers now attach a `generateReason` trace naming the tools actually called,
+the target action's result and what the agent said.
+
+The `unknown format "date-time" ignored in schema` warnings are harmless: they are on stderr, and
+`list-jobs`'s `from`/`to` already carry "ISO 8601 instant" in `.describe()`, so the model is not
+relying on the dropped `format` keyword.
+
+Impact: one production-behaviour defect fixed (the approval gate was unreachable as instructed),
+one eval corrected to test its own subject, one harness fidelity gap closed, one artifact stream
+cleaned.
+
+Proposed handling: as described; `docs/plan/upstream-issues/eval-system-prompt.md` gains the
+prompt-assembly half — `agent-native eval` should assemble the prompt the app deploys, runtime
+context included, or export `runtime-context` so a caller can.
+
+Resolution: 2026-09-08 — applied; `pnpm check` passes with 43 guard tests. The five evals' own
+outcome after these changes needs another funded run: `complete-job` and `undo` are confirmed
+green, and the other three are corrected but unproven.
+
+## 2026-09-08 T24 follow-up — release evidence produced: 5/5
+
+Expected (plan reference): D27 and `docs/upgrade-playbook.md` step 10 require a model-backed eval
+run as release evidence; `FINAL-REPORT.md` §4.7 recorded it as the one open release criterion.
+
+Observed: after the three fixes in the entries above, the maintainer's funded run on
+`claude-sonnet-5` returned `ok: true` — 5 total, 5 passed, 0 failed, 0 skipped, every scorer 1. The
+artifact came out as parseable JSON through `--out`, confirming the stream fixes on a real run
+(three writers had shared stdout: the migration steps, pnpm's epilogue and the app's own action
+log).
+
+What the traces show, beyond the scores: `send-job-to-accounting` was **called** and the side
+effect withheld with "Awaiting human approval … did NOT execute", which is the behaviour rule 5 of
+`agent/AGENTS.md` now asks for and the opposite of what the pre-fix instructions produced;
+`archive-customer` was attempted and refused with
+`Role member may not customers:archive (errorCode: AUTHORIZATION)`, and the agent explained the
+role requirement rather than retrying; `list-jobs` answered "no jobs are scheduled for today,
+September 6, 2026" — the pinned `FIXTURE_CLOCK` date, resolved to an explicit calendar date, with
+an empty array and no mutating call.
+
+Impact: the release criterion is closed, and the definition-of-done line on agent parity loses its
+caveat: the agent half is no longer structural. The tally stays 16 of 17 met with 1 pending on the
+`is_template` setting, but with 7 caveats rather than 8.
+
+One residual wrinkle, recorded rather than fixed: the evals pin the agent's `<runtime-context>`
+date to `FIXTURE_CLOCK` while the application's own timestamps come from the real clock, so a
+transcript can show a `completedAt` that disagrees with the agent's notion of "today". It does not
+affect any assertion. Injecting the clock through the container would remove it, if determinism
+there ever matters.
+
+Resolution: 2026-09-08 — `FINAL-REPORT.md` §4.7, follow-up 15, risk 1 and the definition-of-done
+table updated with the run and the five recorded behaviours. Re-run after any change to
+`agent/AGENTS.md`, the action descriptions or the framework pin: a model update can change the
+result with no change to this repository, so a stale eval result is no result.

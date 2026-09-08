@@ -140,8 +140,16 @@ export const CUSTOMER_OTHER_NAME = "Other Company Customer";
 // Jobs. Only `job_scheduled`'s instant is given by B12 directly; the other
 // jobs' `scheduledAt` values are fixed, deterministic choices consistent
 // with their status (a completed or archived job is scheduled in the past
-// relative to the fixture clock, `2026-09-06T12:00:00.000Z`).
+// relative to `FIXTURE_CLOCK`).
 // ---------------------------------------------------------------------------
+
+/**
+ * The instant every other date in this scenario is chosen relative to. Exported
+ * because a caller that tells an agent what "today" is has to agree with the
+ * rows: `scripts/eval-suite.ts` pins the evals' runtime context to it so a
+ * date-relative question resolves the same way on every run.
+ */
+export const FIXTURE_CLOCK = "2026-09-06T12:00:00.000Z";
 
 export const JOB_SCHEDULED_ID = "job_scheduled";
 export const JOB_SCHEDULED_TITLE = "Scheduled job";

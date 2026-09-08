@@ -311,25 +311,42 @@ EXIT=0
 
 Ports 8787 and 8080 were empty before the run and empty after it.
 
-### 4.7 `pnpm eval` — **skipped run; release evidence pending**
+### 4.7 `pnpm eval` — **release evidence produced 2026-09-08: 5/5**
+
+Produced by the maintainer with a funded `ANTHROPIC_API_KEY` on `claude-sonnet-5`, the framework's
+default Anthropic model, via `RUN_MODEL_EVALS=1 pnpm eval -- --out eval-evidence.json`:
 
 ```
-- accounting export pauses for human approval  (skipped)
-- complete the intended in-progress job  (skipped)
-- list today's jobs without mutation  (skipped)
-- member cannot perform an administrative archive  (skipped)
-- undo the intended completion  (skipped)
-    reason: Set RUN_MODEL_EVALS=1 and a configured provider credential to run model-backed evals
-SKIPPED: 0/0 evals passed, 5 skipped
-EXIT=0
+ok: true — 5 total, 5 passed, 0 failed, 0 skipped
 ```
 
-No `ANTHROPIC_API_KEY` was available to this verification. Per D27 a skipped run **does not** satisfy
-the release criterion: **the real agent write/read/undo and approval evidence from T17 is
-pending** and the maintainer must produce it before the first real deployment. What *is* proven
-without a model is that the runtime path exists — `verify:worker`'s `agent chat SSE` check reaches
-the agent-chat endpoint and gets the framework's `missing_credentials` response, which exercises
-routing, auth and the plugin but not tool selection.
+Every scorer scored 1. The five behaviours the upgrade playbook asks to be recorded, with what the
+run actually showed:
+
+| Behaviour | Evidence from the run |
+| --- | --- |
+| Correct target | `complete-job` after `list-customers` + `list-jobs`, aimed at `job_in_progress` |
+| Successful tool result | the action returned the job with `status: "completed"`, and the agent reported it |
+| Persisted state | re-read through the repository after the run, not from the agent's reply |
+| Human approval | `send-job-to-accounting` **called**, side effect withheld, "Awaiting human approval … did NOT execute"; no export request left behind |
+| Member denial | `archive-customer` attempted and refused: `Role member may not customers:archive (errorCode: AUTHORIZATION)`, and the agent explained the role requirement rather than retrying |
+
+`undo-operation` returned `job_in_progress` to `in_progress`, and `list-jobs` answered "no jobs are
+scheduled for today, September 6, 2026" with an empty array and no mutating call.
+
+Getting here took three defects, all recorded in `DISCREPANCIES.md` (2026-09-08) and fixed: the
+`--json` artifact was unparseable through a shell redirection (three separate writers on stdout);
+`agent-native eval` supplied no system prompt, so every request was refused for caching an empty
+system block; and rule 4 of `agent/AGENTS.md` told the agent to obtain the accounting approval in
+conversation, which made the framework's `needsApproval` gate unreachable — a production-behaviour
+defect that only a model-backed run could have found. That last one is the answer to "what do the
+evals buy that the other 380 tests do not".
+
+One wrinkle to know about: the evals pin the agent's `<runtime-context>` date to `FIXTURE_CLOCK`
+(2026-09-06) for reproducibility, while the application's own timestamps come from the real clock,
+so a transcript can show a `completedAt` that disagrees with the agent's notion of "today". It has
+no bearing on the assertions; a future change could inject the clock through the container if
+determinism there ever matters.
 
 ### 4.8 `node scripts/bootstrap.mjs --plan --env-file .bootstrap.env.example`
 
@@ -648,10 +665,11 @@ seventeen-step checklist; this is what is outstanding as of 2026-09-08.
 
 ### 6.4 Before the first real deployment
 
-15. **Produce the model-backed eval evidence.** Run `RUN_MODEL_EVALS=1 pnpm eval` with a real
-    `ANTHROPIC_API_KEY` and record correct target, successful tool result, persisted state, human
-    approval behaviour and member denial. D27 is explicit that a skipped run is not model validation,
-    and this is the one release criterion this report cannot close.
+15. ~~**Produce the model-backed eval evidence.**~~ **Done 2026-09-08: 5/5, see §4.7.** Re-run
+    `RUN_MODEL_EVALS=1 pnpm eval -- --out eval-evidence.json` before each release and after any
+    change to `agent/AGENTS.md`, the action descriptions or the framework pin — a model update can
+    change the result with no change to this repository. A run that ends in a per-eval `error`
+    evaluated nothing, whatever the scores beside it say.
 16. **Rehearse a restore.** `bash scripts/restore-d1-check.sh <dump>` is the tested-by-guard test
     restore and it never touches production, but it has never been run against a real export. Do it
     once against a real staging dump before trusting the procedure.
@@ -698,11 +716,12 @@ all and is easy to delete by accident.
 
 Ordered by how likely each is to matter to whoever runs this next.
 
-1. **Model-backed eval evidence is pending.** Five evals exist and skip without a credential. D27
-   requires a real agent write/read/undo and approval scenario as release evidence, and this
-   verification could not produce it. Everything the report says about the *agent* is therefore about
-   its plumbing (routing, auth, tool surface, the `needsApproval` gate in code) and not about whether
-   the model picks the right action.
+1. **Model-backed eval evidence: produced 2026-09-08, 5/5 (§4.7).** It was pending when this report
+   was written, and closing it changed one of the report's own conclusions: the run found that
+   `agent/AGENTS.md` instructed the agent to obtain the accounting approval in conversation, which
+   left the framework's `needsApproval` gate unreachable in the deployed app. No structural test
+   could have caught that, so re-run the evals after any change to the instructions, the action
+   descriptions or the framework pin — and treat a stale eval result as no result.
 2. **The build depends on a two-replacement patch of framework-generated code.** It fails loudly
    rather than silently, and its assumptions are asserted (`tests/guards/worker-patches.test.mjs`,
    `dist/_worker.js/PATCHED.json`), but it is still surgery on someone else's output. D27 is explicit
@@ -763,7 +782,7 @@ there is one.
 | Deterministic seed data loads with `pnpm db:seed` | **met** | §4.10: 28 scenario statements, 5 users, fixed ids. |
 | Local sign-in works with seeded users; production Google sign-in is documented | **met (caveat)** | §4.10 sign-in as `owner@example.invalid` returns a session that resolves to `org_acme`/`owner`. Google is documented in `docs/authentication-and-authorization.md` and `docs/bootstrap.md` step 3 with the framework's own callback URI; **never exercised**, because no Google client exists (§6.2). |
 | Organization membership and roles work; cross-organization access is blocked and tested | **met** | §4.12; `tests/e2e/isolation.spec.ts` and `tests/e2e/authorization.spec.ts` pass (§4.6); `verify:worker`'s isolation check passes (§4.5); and live in §4.10 an outsider gets `NOT_FOUND` for another organization's job. |
-| The sample Customer and Job flows work in the UI and through the agent, using the same actions | **met (caveat)** | The UI half is proven: `customers.spec.ts`, `jobs-lifecycle.spec.ts`, `jobs-list.spec.ts`, `complete-job.spec.ts` and `parity.spec.ts`, which asserts the UI and a direct HTTP call run the same action and differ only in `caller`. The **agent** half is structural — one `runAppAction`, one use case, the tool list in `server/plugins/agent-chat.ts`, and the SSE endpoint reached in §4.5 — but no model has driven it in this verification (§8.1). |
+| The sample Customer and Job flows work in the UI and through the agent, using the same actions | **met** | The UI half: `customers.spec.ts`, `jobs-lifecycle.spec.ts`, `jobs-list.spec.ts`, `complete-job.spec.ts` and `parity.spec.ts`, which asserts the UI and a direct HTTP call run the same action and differ only in `caller`. The agent half, as of 2026-09-08, is no longer structural: §4.7's 5/5 eval run has the model choosing `complete-job`, `undo-operation`, `list-jobs`, `send-job-to-accounting` and `archive-customer` through the same actions, with the approval gate and the authorization refusal both exercised. |
 | Authorization is enforced inside the application layer, not in the UI | **met** | §4.11. `requireCapability` first in all 15 use cases; `tests/unit/application/authorization.test.ts`; `tests/e2e/authorization.spec.ts` asserts both that the button is hidden from a member *and* that the server refuses. |
 | Every mutation produces an audit row; at least `complete-job` is undoable; undo refuses to overwrite newer changes | **met** | `complete-job.spec.ts` asserts the audit row and its `caller`; `undo.spec.ts` asserts undo restores status and is recorded as its own operation; `undo-conflict.spec.ts` asserts undo refuses when another user moved the record; `verify:worker`'s "reversible write, conflict, undo and isolation" proves the same on the built Worker. |
 | Unit tests, the Worker smoke, and the hermetic Playwright suite pass locally and in GitHub Actions | **met** | Locally: §4.2 (312 + 38), §4.5 (12 checks), §4.6 (14 tests). In Actions: the CI run for `760f349` is green on all three jobs (§4.14). |
@@ -774,8 +793,8 @@ there is one.
 | The repository is usable as a GitHub template without retaining upstream git history | **pending** | `is_template` is `false` (§4.14, §6.3.9) — a maintainer setting, not a code gap. The history-free path itself is implemented and documented: "Use this template" starts a fresh history, `scripts/rename-app.mjs` renames everything, and `docs/template-workflow.md` covers porting with `git format-patch` / `git am --3way`. |
 | MIT license present; no customer-specific information anywhere | **met** | `LICENSE` is MIT. Sample names are `Acme Services`, `Other Company`, `Example Customer A/B`, `Example Job` and addresses under `example.invalid` throughout; `scripts/check-config-hygiene.mjs` and the plan's generic-content rule keep it that way. |
 
-**Summary: 16 of 17 lines met (8 of them with a stated caveat), 1 pending on a maintainer setting.**
-The two things that stand between this repository and a first real deployment are the model-backed
-eval evidence (§6.4.15) and the Cloudflare/Google/GitHub setup in §6, all of which
-`scripts/bootstrap.mjs` performs except the six steps that need a browser, a payment method or a
-human decision.
+**Summary: 16 of 17 lines met (7 of them with a stated caveat), 1 pending on a maintainer setting.**
+Updated 2026-09-08: the agent-parity line lost its caveat when the eval evidence came in at 5/5
+(§4.7). What now stands between this repository and a first real deployment is the
+Cloudflare/Google/GitHub setup in §6, all of which `scripts/bootstrap.mjs` performs except the six
+steps that need a browser, a payment method or a human decision.
