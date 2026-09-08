@@ -68,6 +68,10 @@ test("a model-backed --json run writes only JSON to stdout", () => {
   assert.match(result.stderr, /applied 0001_init\.sql/);
   assert.doesNotMatch(result.stdout, /applied 0001_init\.sql/);
 
+  // The app logs one JSON line per action call to stdout (B16). Those lines
+  // appear once the agent runs; the driver must keep them off its own stdout.
+  assert.doesNotMatch(result.stdout, /"event":"action"/);
+
   // No provider was reachable, so nothing here was a paid request.
   for (const entry of report.report.results) {
     assert.match(String(entry.error), /No LLM provider is connected/);

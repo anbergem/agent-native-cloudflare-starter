@@ -56,6 +56,13 @@ Two independent fixes; either alone stops the 400, and both look right:
    the app's actions through `discoverActions(cwd)` for the same reason. Evaluating an agent with
    the real tools but no system prompt scores something the app never runs: tool choice, refusal
    behaviour and approval gates all live in those instructions.
+3. The same applies to the rest of the prompt assembly. `production-agent.ts` prepends
+   `buildRuntimeContextPrompt`'s `<runtime-context>` block and injects `buildCurrentTimeUserContext`
+   per turn; the eval path does neither, so an evaluated agent cannot answer "show me today's jobs"
+   — it does not know what today is, and a well-instructed agent will not guess. In this repository
+   that cost one eval and thirty seconds of a paid run to diagnose. Either assemble the deployed
+   prompt in `runEvalSuite`, or export `agent/runtime-context` so a caller can: it is not in the
+   package export map today, and a deep import is refused with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
 
 **Reproduction**
 

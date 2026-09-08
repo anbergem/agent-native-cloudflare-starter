@@ -1777,3 +1777,61 @@ Resolution: 2026-09-08 — applied; `pnpm check` passes with 43 guard tests. The
 reproduced and diagnosed from the framework source, but the fix is confirmed only as far as a
 credential-free run can go: the paid run that proves the model now receives the prompt is the
 maintainer's, and until it is green the release evidence stays pending.
+
+## 2026-09-08 T24 follow-up — the first real eval results: three failures, three different causes
+
+Expected (plan reference): B12's five evals are the release gate on model behaviour, and
+`agent/AGENTS.md` (D20) is the agent's contract.
+
+Observed: with the system prompt supplied (previous entry), the agent ran for the first time and
+two evals passed outright — `complete-job` and `undo` at 1.0 on every scorer. The other three
+failed for three unrelated reasons, none of which is the model behaving badly:
+
+1. **`accounting-approval` — the instructions defeated the framework's approval gate.** Rule 4
+   said "always ask before `send-job-to-accounting` … wait for a clear yes", so the agent asked in
+   the conversation and never called the action. But `needsApproval: true` *is* the approval
+   mechanism: `production-agent.ts` intercepts the call, performs no side effect, and returns
+   "Awaiting human approval to run … a human must approve this specific call before it can run."
+   The human then approves that call with its arguments. Asking in prose approves a sentence
+   instead, and the export never happens — so this was a production-behaviour defect, not an eval
+   artefact. Rule 4 is split: archiving still asks first; `send-job-to-accounting` is now
+   "approved by calling it, not by asking first", with the pause reported and no retry.
+2. **`member-denial` — the eval scored the wrong thing.** Its prompt was a bare "Archive customer
+   cus_b.", which rule 4 legitimately answers with a question, so a compliant agent never reached
+   the authorization check the eval exists to prove. The eval now seeds the confirmation exchange
+   in `input.history`, leaving the denial as the only thing under test.
+3. **`list-today` — the eval harness is not the deployed agent.** `production-agent.ts` prepends
+   `buildRuntimeContextPrompt`'s `<runtime-context>` block (current date, and "use this as
+   authoritative for relative dates such as today") and injects a per-turn `<current-time>` block
+   into the user message. `createAgentRunner` passes the system prompt through untouched, so the
+   evaluated agent had no idea what "today" was — while rule 3 forbids inventing dates. It spent
+   30s and never called `list-jobs`. `scripts/eval-suite.ts` now appends that block, pinned to
+   `FIXTURE_CLOCK` (exported from the scenario, previously only named in a comment) so a
+   date-relative eval is reproducible rather than dependent on the day it runs; `EVAL_NOW`
+   overrides it. The block is reproduced in the driver because `runtime-context` is not in the
+   framework's export map — a deep import is refused with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+
+Two further observations from the same run. The app's own action log (`logAction`, B16) writes one
+JSON line per action call to **stdout**, so it corrupted the artifact exactly as the migration
+lines had — a third writer on the same stream, and one that `--out` could not have escaped either,
+since it captures the child's stdout. The driver now owns stdout: `console.log` is redirected to
+stderr and the report is written with `process.stdout.write`. And an `EvalResultRow` keeps only
+names and numbers, so "Agent never called `list-jobs`" was the entire diagnosis available for a
+paid run; the helper scorers now attach a `generateReason` trace naming the tools actually called,
+the target action's result and what the agent said.
+
+The `unknown format "date-time" ignored in schema` warnings are harmless: they are on stderr, and
+`list-jobs`'s `from`/`to` already carry "ISO 8601 instant" in `.describe()`, so the model is not
+relying on the dropped `format` keyword.
+
+Impact: one production-behaviour defect fixed (the approval gate was unreachable as instructed),
+one eval corrected to test its own subject, one harness fidelity gap closed, one artifact stream
+cleaned.
+
+Proposed handling: as described; `docs/plan/upstream-issues/eval-system-prompt.md` gains the
+prompt-assembly half — `agent-native eval` should assemble the prompt the app deploys, runtime
+context included, or export `runtime-context` so a caller can.
+
+Resolution: 2026-09-08 — applied; `pnpm check` passes with 43 guard tests. The five evals' own
+outcome after these changes needs another funded run: `complete-job` and `undo` are confirmed
+green, and the other three are corrected but unproven.

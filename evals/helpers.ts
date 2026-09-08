@@ -26,6 +26,27 @@ function detailFor(run: AgentRunOutput, tool: string) {
   return run.toolCallDetails?.find((detail) => detail.name === tool);
 }
 
+/**
+ * Why a scorer landed where it did, for the report.
+ *
+ * An `EvalResultRow` keeps only names and numbers, so a failing eval otherwise
+ * says "Agent never called X" and nothing about what it did instead. That is
+ * the whole diagnosis for a model-behaviour failure, and re-running to find out
+ * costs another paid run. Both are safe to record: the report is git-ignored.
+ */
+function trace(run: AgentRunOutput, tool: string): string {
+  const called = run.toolCalls.length === 0 ? "none" : run.toolCalls.join(", ");
+  const detail = detailFor(run, tool);
+  const outcome =
+    detail === undefined
+      ? `${tool} was not called`
+      : `${tool} → ${detail.isError === true ? "error" : "ok"}` +
+        `${detail.completedSideEffect === false ? ", side effect withheld" : ""}` +
+        `: ${JSON.stringify(detail.result ?? null).slice(0, 300)}`;
+  const said = run.text.trim().replace(/\s+/g, " ").slice(0, 300);
+  return `tools called: ${called}. ${outcome}. agent said: ${said || "(nothing)"}`;
+}
+
 function parsedResult(detail: ReturnType<typeof detailFor>): unknown {
   if (!detail?.result) return undefined;
   try {
@@ -42,6 +63,7 @@ export function successfulToolCall(input: {
 }) {
   return createScorer({
     name: `${input.tool}-correct-target-and-result`,
+    generateReason: ({ run }) => trace(run, input.tool),
     generateScore(run: AgentRunOutput) {
       const detail = detailFor(run, input.tool);
       return detail?.completed === true &&
@@ -83,6 +105,7 @@ export const noMutations = createScorer({
 export function approvalPaused(tool: string) {
   return createScorer({
     name: `${tool}-awaits-human-approval`,
+    generateReason: ({ run }) => trace(run, tool),
     generateScore(run: AgentRunOutput) {
       const detail = detailFor(run, tool);
       return detail?.completed === true &&
@@ -98,6 +121,7 @@ export function approvalPaused(tool: string) {
 export function toolDenied(tool: string) {
   return createScorer({
     name: `${tool}-authorization-denied`,
+    generateReason: ({ run }) => trace(run, tool),
     generateScore(run: AgentRunOutput) {
       const detail = detailFor(run, tool);
       return detail?.completed === true &&

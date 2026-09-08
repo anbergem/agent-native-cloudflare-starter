@@ -19,11 +19,59 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { format } from "node:util";
 
 import { resolveAgentNativeConfig } from "@agent-native/core/config";
 import { formatReport, runEvalSuite } from "@agent-native/core/eval";
 
 import configInput from "../agent-native.config.ts";
+import { FIXTURE_CLOCK } from "../tests/fixtures/scenario.ts";
+
+// This process's stdout carries exactly one thing: the report. Everything the
+// run itself prints goes to stderr — the app's own action log is one JSON line
+// per action call on stdout (src/infrastructure/logging.ts, B16), which would
+// otherwise sit ahead of the document and make the artifact unparseable, as
+// would any `console.log` the framework adds. Writes below use
+// `process.stdout.write` directly.
+const stdout = process.stdout.write.bind(process.stdout);
+console.log = (...args: unknown[]) => {
+  process.stderr.write(`${format(...args)}\n`);
+};
+
+/**
+ * The `<runtime-context>` block the deployed agent receives and the eval path
+ * does not.
+ *
+ * `production-agent.ts` prepends this (from `buildRuntimeContextPrompt`) so
+ * relative dates are answerable; `createAgentRunner` passes the system prompt
+ * through untouched, so an evaluated agent has no idea what "today" is — and
+ * rule 3 of the instructions forbids inventing one. Without this, "Show me
+ * today's jobs" cannot be answered by an agent that follows its instructions.
+ *
+ * The block is reproduced here rather than imported: `runtime-context` is not
+ * in `@agent-native/core`'s export map. Keep it in step on upgrade — the
+ * upgrade playbook's eval step is where that is caught. Pinned to
+ * `FIXTURE_CLOCK` so a date-relative eval is reproducible instead of depending
+ * on the day it runs; override with `EVAL_NOW` (an ISO 8601 instant).
+ */
+function runtimeContextBlock(): string {
+  // guard:allow-env-credential — test-only clock override, not a credential
+  const iso = process.env.EVAL_NOW ?? FIXTURE_CLOCK;
+  const now = new Date(iso);
+  if (Number.isNaN(now.getTime())) {
+    console.error(`eval-suite: EVAL_NOW is not an ISO 8601 instant: ${iso}`);
+    process.exit(2);
+  }
+  const day = now.toISOString().slice(0, 10);
+  return `
+
+<runtime-context>
+currentDate: ${day}
+currentTimezone: UTC
+currentDateInTimezone: ${day}
+Use this runtime context as authoritative for relative dates such as today, yesterday, tomorrow, this week, and last month. Resolve relative dates to explicit calendar dates before querying data or creating artifacts, and include the exact date or date range in factual answers. This block only carries day-granularity.
+</runtime-context>`;
+}
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -58,13 +106,17 @@ if (!instructions) {
   );
   process.exit(2);
 }
-const systemPrompt = readFileSync(path.join(root, instructions), "utf8").trim();
+const instructionsText = readFileSync(
+  path.join(root, instructions),
+  "utf8",
+).trim();
 // An empty prompt is the exact input that produces the opaque 400 above; fail
 // with a sentence that names the file instead.
-if (systemPrompt === "") {
+if (instructionsText === "") {
   console.error(`eval-suite: ${instructions} is empty`);
   process.exit(2);
 }
+const systemPrompt = instructionsText + runtimeContextBlock();
 
 let report;
 let files: string[];
@@ -77,16 +129,17 @@ try {
   }));
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
-  if (json) console.log(JSON.stringify({ ok: false, error: message }, null, 2));
+  if (json)
+    stdout(`${JSON.stringify({ ok: false, error: message }, null, 2)}\n`);
   else console.error(`\n  eval failed: ${message}\n`);
   process.exit(1);
 }
 
 if (report.total === 0) {
   // An app with no evals must not fail CI — the CLI's behaviour, kept.
-  if (json) console.log(JSON.stringify({ ok: true, report, files }, null, 2));
+  if (json) stdout(`${JSON.stringify({ ok: true, report, files }, null, 2)}\n`);
   else
-    console.log(
+    console.error(
       files.length === 0
         ? "\n  No eval files found (looked for **/*.eval.ts and evals/*.ts).\n"
         : `\n  Found ${files.length} eval file(s) but no defineEval() exports.\n`,
@@ -95,10 +148,10 @@ if (report.total === 0) {
 }
 
 if (json) {
-  console.log(
-    JSON.stringify({ ok: report.failed === 0, report, files }, null, 2),
+  stdout(
+    `${JSON.stringify({ ok: report.failed === 0, report, files }, null, 2)}\n`,
   );
 } else {
-  console.log(formatReport(report));
+  stdout(`${formatReport(report)}\n`);
 }
 process.exit(report.failed > 0 ? 1 : 0);
