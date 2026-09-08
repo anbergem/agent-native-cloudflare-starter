@@ -29,8 +29,8 @@ T14/T15/T16 → T17/T18 → delivery/docs/final verification. CI grows with each
 | T20 | Production deployment workflow | T19 | done (PR #16) |
 | T21 | Backups and restore | T20 | done (PR #16) |
 | T22 | Renovate, upgrade playbook, repository settings | T18 | done (PR #16) |
-| T23 | Documentation set | T21, T22 | todo |
-| T24 | Bootstrap checklist and rename script | T23 | todo |
+| T23 | Documentation set | T21, T22 | done (PR #PRNUM) |
+| T24 | Bootstrap script, checklist and rename script | T23 | done (PR #PRNUM) |
 | T25 | Norwegian Bokmål upstream change (prepared for maintainer review) | T15 | todo |
 | T26 | Final verification and report | T24, T25 | todo |
 | T27 | External integration port and `send-job-to-accounting` | T10 | done (T12/T13/T27 implementation milestone) |

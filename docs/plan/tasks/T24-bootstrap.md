@@ -30,11 +30,15 @@ Depends on: T23. Read: F6, F10; B13, B14, B19, B20; D04, D11, D15, D18, D21, D22
       differs from `APP_NAME`, and when `pnpm check` has not been run in this tree (check for
       `dist/BUILD_INFO.json` only when a first deployment is needed).
    2. D1: for `staging` and `production`, `wrangler d1 create <APP_NAME>-<env> --jurisdiction eu`
-      unless `wrangler d1 list --json` already lists it; write the `database_id` into
+      unless `wrangler d1 list --json` already lists it. `d1 create` has no `--json` on 4.129.0,
+      so after creating, re-run `wrangler d1 list --json` and read the `uuid` of the matching
+      entry; refuse rather than guess if it is not reported. Write the `database_id` into
       `env.<env>.d1_databases[0].database_id` in `wrangler.jsonc` by editing the text in place
       (keep comments and formatting; re-parse with the same JSONC reader
-      `check-config-hygiene.mjs` uses) and set `env.<env>.vars.APP_URL` from
-      `STAGING_URL` / `PRODUCTION_URL`.
+      `check-config-hygiene.mjs` uses — extracted to `scripts/lib/jsonc.mjs` so both files
+      share it) and set `env.<env>.vars.APP_URL` from `STAGING_URL` / `PRODUCTION_URL`. Do not
+      use `wrangler d1 create --update-config`: it rewrites the file in a shape we do not
+      control.
    3. First deployment when needed: `wrangler secret put` requires the Worker to exist; when
       `wrangler deployments list --env <env>` reports none, run `pnpm build:worker` once and
       `wrangler deploy --env <env>`. The plan output says this explicitly.
@@ -46,19 +50,24 @@ Depends on: T23. Read: F6, F10; B13, B14, B19, B20; D04, D11, D15, D18, D21, D22
       `SEED_PASSWORD` on staging only. Existing secrets are listed with
       `wrangler secret list --env <env>` and reported `already present` unless `--rotate` is
       given (rotating the signing secrets logs every user out; say so).
-   5. GitHub environments with `gh api --method PUT repos/<repo>/environments/<name>`:
+   5. GitHub environments with
+      `gh api --method PUT repos/<repo>/environments/<name> --input -`, the JSON body on stdin:
       `staging` (no reviewers), `production` (reviewers from `PRODUCTION_REVIEWERS` resolved to
-      ids via `gh api users/<login>`; refuse to create it without at least one reviewer unless
-      `--allow-unprotected-production`), `production-backup` (no reviewers).
+      ids via `gh api --method GET users/<login>`; refuse to create it without at least one
+      reviewer unless `--allow-unprotected-production`), `production-backup` (no reviewers).
+      An environment that already exists is reported `already present` and left exactly as it
+      is, so a reviewer list curated by hand is never overwritten.
    6. GitHub secrets and variables: `gh secret set <NAME> --env <env> --repo <repo>` reading the
       value from stdin for `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` (all three
       environments), `SEED_PASSWORD` (staging), and the backup secrets (production-backup, when
       provided); `gh variable set --env` for `STAGING_URL`, `PRODUCTION_URL` and the optional
       backup variables.
-   7. Branch protection on `main` (`gh api --method PUT repos/<repo>/branches/main/protection`
-      with a JSON body from a temporary file): required status checks `CI / verify`,
-      `CI / worker`, `CI / e2e`, pull requests required, no force pushes, no deletions; and
-      `gh repo edit <repo> --template` when `TEMPLATE_REPOSITORY=1`.
+   7. Branch protection on `main`
+      (`gh api --method PUT repos/<repo>/branches/main/protection --input -`, the JSON body on
+      stdin rather than a temporary file: one channel for every body, nothing to clean up on a
+      refusal path, and the guard test can assert the exact bytes): required status checks
+      `CI / verify`, `CI / worker`, `CI / e2e`, pull requests required, no force pushes, no
+      deletions; and `gh repo edit <repo> --template` when `TEMPLATE_REPOSITORY=1`.
    8. Print the manual checklist that cannot be automated: enable the Workers Paid plan; create
       the Cloudflare API token (template "Edit Cloudflare Workers" plus D1 Edit) before running
       the script; create the Google OAuth client with an internal consent screen and the
@@ -73,17 +82,34 @@ Depends on: T23. Read: F6, F10; B13, B14, B19, B20; D04, D11, D15, D18, D21, D22
    `already present` everywhere), the exact argument arrays, the refusal cases, and that no
    secret value appears in stdout or stderr.
 1. `scripts/rename-app.mjs --name <kebab> --display "<Display Name>"`: replaces
-   `example-jobs` with the kebab name and `Example Jobs` with the display name in
-   `package.json` (`name`), `wrangler.jsonc`, `server/plugins/config.ts`,
-   `server/plugins/auth.ts`, `server/plugins/agent-chat.ts`, `README.md`, `docs/**/*.md`,
-   `scripts/*.mjs`, `scripts/*.sh`, `.github/workflows/*.yml`, `.bootstrap.env.example`; prints
-   every file changed; refuses names that are not `^[a-z][a-z0-9-]{2,40}$`.
+   `example-jobs` with the kebab name and `Example Jobs` with the display name. It **walks the
+   repository** rather than a hand-written list — the list this step first carried omitted seven
+   load-bearing files, including `agent/AGENTS.md`, which is the runtime agent's system prompt
+   (see `DISCREPANCIES.md`, 2026-09-08). It rewrites only files that actually contain one of the
+   two strings, in `.ts`, `.tsx`, `.mjs`, `.sh`, `.md`, `.json`, `.jsonc`, `.yml`, `.yaml` and
+   `*.example`, and prints every one. Excluded: `docs/plan/` (the plan is a historical record
+   whose decision records state the sample's name; T26 deletes it), `pnpm-lock.yaml`,
+   `tests/e2e/.auth/`, every generated or vendored tree, and `scripts/rename-app.mjs` itself,
+   whose own constants are what it searches for. `package.json`'s `name` is set as a field,
+   because it holds `agent-native-cloudflare-starter` and no string replacement would reach it.
+   `--dry-run` lists without writing. Refuses names that are not `^[a-z][a-z0-9-]{2,40}$`, and a
+   display name that is empty, over 60 characters, or contains a quote, a backslash or a
+   newline.
 2. `scripts/bootstrap-org.mjs --env <env> --name "<Org>" --owner <email>`: inserts the
    organization and its owner membership through `wrangler d1 execute <APP_NAME>-<env> --remote
-   --env <env> --command`, with every NOT NULL column from F6 and
-   `node_modules/@agent-native/core/dist/org/migrations.js` (epoch-millisecond timestamps,
-   generated ids); refuses to run without `--env`; idempotent (`INSERT OR IGNORE`); `--help`
-   prints usage and exits 0 without touching anything.
+   --env <env> --yes --command`, with every NOT NULL column from F6 and
+   `node_modules/@agent-native/core/dist/org/migrations.js` (epoch-millisecond timestamps).
+   Refuses to run without `--env`. Idempotent, which needs the organization **id derived from
+   its name** (`org_` plus a slug, overridable with `--id`) rather than generated:
+   `organizations` has no unique constraint but its primary key, so `INSERT OR IGNORE` with a
+   fresh id would create a second organization on every run. The member id stays generated,
+   guarded by `UNIQUE(org_id, email)`. `--command` values are validated to a shape that cannot
+   carry SQL syntax (no `;`, no control characters) and single quotes are doubled, because
+   `d1 execute` binds no parameters. `--dry-run` prints the exact argv and SQL without
+   executing, so the statements can be verified against a local D1. `--help` prints usage and
+   exits 0 without touching anything. Nullable columns are deliberately left NULL: `a2a_secret`
+   (no A2A surface, D24) and `active-org-id` (unnecessary with one membership, F6), both of
+   which the framework's own `POST /_agent-native/org` would set.
 3. `docs/bootstrap.md`: the numbered steps 1–17 from the spec, stating for each whether
    `scripts/bootstrap.mjs` performs it or it is manual, with the exact command or click path
    and the expected result. Order: prerequisites (Paid plan, API token, Google OAuth client with
@@ -94,7 +120,10 @@ Depends on: T23. Read: F6, F10; B13, B14, B19, B20; D04, D11, D15, D18, D21, D22
    workflow), first Google sign-in, `scripts/bootstrap-org.mjs`, "require Google sign-in", the
    production dispatch, and a final checklist of things to delete (sample data, the `nb-NO`
    review marker) or keep. No Cloudflare "Connect to GitHub"/Workers Builds integration:
-   deployments come from GitHub Actions only; say why in one sentence.
+   deployments come from GitHub Actions only; say why in one sentence. The redirect URI is
+   `<APP_URL>/_agent-native/google/callback`, not the Better Auth path F7 first recorded —
+   verified at runtime, see `DISCREPANCIES.md` (2026-09-08); the document also gives the `curl`
+   that re-verifies it against the reader's own build.
 4. Every command in the document must be copy-pasteable and use `<placeholders>` only where a
    value is customer-specific.
 
@@ -112,5 +141,6 @@ node scripts/bootstrap.mjs --plan --env-file .bootstrap.env.example   # read-onl
 node scripts/bootstrap-org.mjs --help
 git stash -u && node scripts/rename-app.mjs --name acme-ops --display "Acme Ops" && git diff --stat && git checkout -- . && git stash pop
 ```
-(the rename diff must touch only the files listed in step 1 and `pnpm check` must still pass
-on the renamed tree before reverting).
+(the rename diff must touch only files that contained `example-jobs` or `Example Jobs`, the
+script must have printed every one of them, and `pnpm check` must still pass on the renamed
+tree before reverting).

@@ -139,10 +139,18 @@ Semantics that matter:
 ## F7. Authentication configuration
 
 - Google: `GOOGLE_SIGN_IN_CLIENT_ID`, `GOOGLE_SIGN_IN_CLIENT_SECRET` (identity scopes only).
-  Redirect URI is `<APP_URL>/_agent-native/auth/ba/callback/google` — verify the exact path in
-  `docs/content/authentication.mdx` at implementation time and record it in
-  `docs/authentication-and-authorization.md`. Set `OAUTH_STATE_SECRET` (32+ chars) in
-  production.
+  Redirect URI is `<APP_URL>/_agent-native/google/callback` (corrected in T23/T24; the earlier
+  `/_agent-native/auth/ba/callback/google` is Better Auth's own social callback, which the
+  sign-in page never uses). With the two credentials set, `createAuthPlugin` mounts
+  `/_agent-native/google/auth-url` and `/_agent-native/google/callback`
+  (`dist/server/auth.js:3485`), the sign-in page's Google button calls the first
+  (`GOOGLE_AUTH_URL_PATH` in `dist/client/auth/AuthPage.js:14`), and it builds `redirect_uri`
+  from `resolveOAuthRedirectUri`'s default path (`dist/server/google-oauth.js:292`). Verify
+  against a running build rather than from source: `curl -s
+  http://localhost:8080/_agent-native/google/auth-url` returns the authorization URL with the
+  `redirect_uri` in it. Recorded in `docs/authentication-and-authorization.md`. Set
+  `OAUTH_STATE_SECRET` (32+ chars) in production; the framework falls back to
+  `BETTER_AUTH_SECRET` and throws in production if neither is set.
 - `BETTER_AUTH_SECRET` (32+ chars) is hard-required in production.
 - `APP_URL` is the canonical public origin; set it explicitly on every hosted environment.
 - Password sign-up policy: the deployment alias `AUTH_REQUIRE_EMAIL_VERIFICATION` declares
@@ -258,6 +266,7 @@ NITRO_PRESET=cloudflare_pages NODE_ENV=production pnpm exec agent-native build
 
 ```bash
 wrangler d1 create <name> --jurisdiction eu        # EU jurisdiction; location hint ignored
+                                                   # no --json: read the new uuid from `d1 list --json`
 wrangler d1 migrations create <name> <message>     # creates migrations/NNNN_message.sql
 wrangler d1 migrations list <name> [--local|--remote] [--env <env>]
 wrangler d1 migrations apply <name> [--local|--remote] [--env <env>]

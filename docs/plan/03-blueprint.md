@@ -779,6 +779,15 @@ auth vs authz, org scoping, layers, ports/adapters, audit/undo, CI/CD, environme
 `docs/repository-settings.md` (branch protection, environments). Each has the sections listed
 in T23.
 
+Delivered 2026-09-08 (T23/T24). Two additions to the list above: `scripts/lib/jsonc.mjs`, the
+JSONC reader `check-config-hygiene.mjs` and `bootstrap.mjs` share, and `.bootstrap.env.example`,
+the names-only bootstrap input. `docs/plan/notes-deployment.md` was folded into
+`docs/deployment.md` and deleted. Two rules hold across the whole set and are what T26 should
+re-check: every `pnpm <script>` named in `README.md`, `ARCHITECTURE.md`, `AGENTS.md` or
+`docs/*.md` exists in `package.json` (24 distinct scripts, asserted by the extraction script in
+T23's pull request), and every `wrangler`/`gh` invocation was verified against the installed
+version's `--help` before it was written down.
+
 ## B22. External integration pattern (`send-job-to-accounting`)
 
 Purpose: prove, with tests, how a command that writes to an external system fits the same

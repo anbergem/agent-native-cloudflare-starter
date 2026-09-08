@@ -2,6 +2,10 @@
 
 A backup strategy is incomplete until restore has been tested.
 
+This page is the strategy and the full procedures. `docs/runbook.md` has the incident-time
+short versions — *Verify the most recent backup*, *Perform a test restore*, *Restore D1 with
+Time Travel*, *Recover after a bad migration* — and links back here.
+
 ## Strategy
 
 Two layers protect the production database, because they fail in different ways.
@@ -25,10 +29,11 @@ Layer 1 answers "we broke the data an hour ago". Layer 2 answers "we lost the ac
 ## What is covered
 
 Covered: everything in the production D1 database. That is the application's own tables from
-`migrations/` (`customers`, `jobs`, `operations`, `accounting_exports`), the framework's own
-tables (users, sessions, organizations, memberships, audit events) that live in the same
-database, and the `d1_migrations` bookkeeping table, so a restored copy knows which migrations
-it already has.
+`migrations/` (`customers`, `jobs`, `operations`, `idempotency_keys`, `accounting_exports`),
+the framework's own tables (users, sessions, organizations, memberships, audit events) that
+live in the same database, and the `d1_migrations` bookkeeping table, so a restored copy knows
+which migrations it already has. The two schema owners are explained in
+`docs/database-and-migrations.md`; for backup purposes they are one database and one dump.
 
 Not covered:
 

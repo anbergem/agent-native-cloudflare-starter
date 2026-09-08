@@ -27,8 +27,8 @@ Depends on: T18. Read: F10; B13, B19, B20; D11, D21.
    exec wrangler deploy --env staging --dry-run --outdir /tmp/wrangler-dry` succeeds (if the
    dry run rejects the `REPLACE_ME` ids, use a temporary copy of the config with dummy UUIDs
    and say so in the PR).
-3. Add `docs/plan/notes-deployment.md` (bullets only; folded into `docs/deployment.md` by
-   T23): required secrets and variables per environment (`CLOUDFLARE_API_TOKEN` with
+3. Add `docs/plan/notes-deployment.md` (bullets only; folded into `docs/deployment.md` and
+   deleted by T23 — done 2026-09-08): required secrets and variables per environment (`CLOUDFLARE_API_TOKEN` with
    permissions Workers Scripts:Edit, D1:Edit, Workers Routes:Edit; `CLOUDFLARE_ACCOUNT_ID`;
    `SEED_PASSWORD`; variable `STAGING_URL`).
 

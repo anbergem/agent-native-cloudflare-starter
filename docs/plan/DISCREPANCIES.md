@@ -1252,6 +1252,8 @@ backup only needs account-scoped `D1 Read`.
 
 Resolution: 2026-09-07 — B20 corrected in the same change; `docs/repository-settings.md` and
 `docs/plan/notes-deployment.md` document both environments and the reason for the split.
+(2026-09-08, T23: `notes-deployment.md` was folded into `docs/deployment.md` and deleted, as
+T23 step 5 requires; `docs/deployment.md` and `docs/repository-settings.md` now carry it.)
 
 ## 2026-09-07 T19–T22 — the doctor's `no-env-credentials` guard fails the deployment scripts
 
@@ -1320,3 +1322,265 @@ Proposed handling: added `backups/` and an explicit `restore-report-*.log` rule 
 saying why. The GitHub workflow is unaffected: it points `BACKUP_DIR` at `$RUNNER_TEMP`.
 
 Resolution: 2026-09-07 — `git check-ignore backups/ restore-report-x.log` matches both.
+
+## 2026-09-08 T23/T24 — the Google redirect URI is the framework's own `/_agent-native/google/callback`
+
+Expected (plan reference): `docs/plan/02-framework-facts.md` F7 — "Redirect URI is
+`<APP_URL>/_agent-native/auth/ba/callback/google` — verify the exact path in
+`docs/content/authentication.mdx` at implementation time and record it in
+`docs/authentication-and-authorization.md`" — and `docs/plan/tasks/T24-bootstrap.md` step 3,
+which asks for "the redirect URIs verified in
+`node_modules/@agent-native/core/docs/content/authentication.mdx` and the framework's route
+source".
+
+Observed: the path F7 names is Better Auth's own social callback, mounted under
+`/_agent-native/auth/ba` — but the sign-in page's Google button never goes there. It calls
+`GET /_agent-native/google/auth-url` (`GOOGLE_AUTH_URL_PATH` in
+`node_modules/@agent-native/core/dist/client/auth/AuthPage.js:14`), which `createAuthPlugin`
+mounts whenever `GOOGLE_SIGN_IN_CLIENT_ID`/`_SECRET` are configured
+(`dist/server/auth.js:3485-3500`), and that route builds the authorization URL with
+`resolveOAuthRedirectUri(event)`, whose default path is `/_agent-native/google/callback`
+(`dist/server/google-oauth.js:292`).
+
+Verified at runtime rather than from the source alone. With
+`GOOGLE_SIGN_IN_CLIENT_ID=verify-only.apps.googleusercontent.com` and a matching secret in
+`.env`, on `pnpm dev`:
+
+```
+$ curl -s http://localhost:8080/_agent-native/google/auth-url
+{"url":"https://accounts.google.com/o/oauth2/v2/auth?client_id=verify-only.apps.googleusercontent.com
+ &redirect_uri=http%3A%2F%2Flocalhost%3A8080%2F_agent-native%2Fgoogle%2Fcallback
+ &response_type=code&scope=openid+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email
+ +https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.profile&access_type=online
+ &prompt=select_account&state=…"}
+```
+
+Impact: T24 step 3 and T23's `docs/authentication-and-authorization.md`. Registering F7's path
+in Google would produce `redirect_uri_mismatch` on the first production sign-in, with no other
+symptom — the one bootstrap error that is invisible until a customer tries to log in.
+
+Proposed handling: `docs/authentication-and-authorization.md`, `docs/bootstrap.md` and
+`scripts/bootstrap.mjs`'s printed manual checklist all name
+`<APP_URL>/_agent-native/google/callback`, and each of the two documents also gives the `curl`
+above so a reader can re-verify it against their own build instead of trusting the document.
+The Better Auth path is documented only where it belongs: as the callback shape a *second*
+provider would need (`docs/authentication-and-authorization.md`, "Adding another provider"),
+with the same instruction to verify it before registering it.
+
+Resolution: 2026-09-08 — F7 corrected to `<APP_URL>/_agent-native/google/callback` for the
+sign-in flow this app uses, with the verification command. T24 step 3 updated.
+
+## 2026-09-08 T24 — the rename script's file list is incomplete, and `docs/**/*.md` would rewrite the plan
+
+Expected (plan reference): `docs/plan/tasks/T24-bootstrap.md` step 1 — replace the two strings
+"in `package.json` (`name`), `wrangler.jsonc`, `server/plugins/config.ts`,
+`server/plugins/auth.ts`, `server/plugins/agent-chat.ts`, `README.md`, `docs/**/*.md`,
+`scripts/*.mjs`, `scripts/*.sh`, `.github/workflows/*.yml`, `.bootstrap.env.example`" — with
+the acceptance rule that "the rename diff must touch only the files listed in step 1".
+
+Observed: that list is both too small and too large.
+
+Too small — `rg -l 'example-jobs|Example Jobs'` over the tracked tree finds seven load-bearing
+files the list omits: `app/lib/app-config.ts` (the browser bundle's app slug and title),
+`app/root.tsx` (`configureTracking`'s app id), `server/plugins/agent-native-email-branding.ts`
+(the app name and `homePath`), `server/routes/api/ready.get.ts` (a comment naming the local
+database), `public/manifest.json` (the PWA name), `agent/AGENTS.md` (the *runtime agent's
+system prompt*, which would keep telling the model it operates "Example Jobs"), and
+`tests/e2e/reset.ts`. Leaving `app/lib/app-config.ts` at `example-jobs` also disagrees with
+`server/plugins/config.ts`'s `app.id`, which the framework uses for credential scoping.
+
+Too large — `docs/**/*.md` matches `docs/plan/**/*.md`, which is the implementation plan:
+`01-decisions.md` D18 *states* that the sample Worker is named `example-jobs`, and
+`DISCREPANCIES.md` quotes command output containing it. Rewriting those makes the record say
+something that never happened.
+
+Impact: T24 step 1 and its acceptance rule.
+
+Proposed handling: `scripts/rename-app.mjs` walks the repository rather than a hand-written
+list, rewrites only files that actually contain one of the two strings, and prints every one.
+Excluded: `docs/plan/` (the historical record; T26 deletes it), `pnpm-lock.yaml`,
+`tests/e2e/.auth/`, every generated or vendored tree, and `scripts/rename-app.mjs` itself —
+whose own `FROM_NAME`/`FROM_DISPLAY` constants are what it searches for, so renaming them
+would leave a script that can never be run again. `package.json`'s `name` is set as a field
+rather than by string replacement, because it currently holds
+`agent-native-cloudflare-starter` and the string replacement would never reach it.
+The acceptance rule becomes "the diff touches only files that contained one of the two
+strings, and the script printed all of them", which is checkable rather than a list to
+maintain.
+
+Resolution: 2026-09-08 — T24 step 1 and its acceptance rewritten to the scan-driven rule with
+the exclusions and the reasons.
+
+## 2026-09-08 T24 — the JSON bodies reach `gh api` on stdin, not through a temporary file
+
+Expected (plan reference): `docs/plan/tasks/T24-bootstrap.md` step 0.7 — branch protection with
+"a JSON body from a temporary file".
+
+Observed: `gh api --input -` reads the request body from standard input (`gh api --help`:
+"a request body may be read from file specified by `--input`. Use `-` to read from standard
+input"), which is strictly better here for three reasons. It matches the rule the same step
+sets two paragraphs later — "secret values are passed only through stdin or the child
+environment" — so there is one channel for every body instead of two. It removes a file that
+has to be created, chmod-considered and cleaned up on every exit path, including the refusal
+paths. And it lets `tests/guards/bootstrap.test.mjs` assert the **exact** body: the stub logs
+its stdin, whereas a temporary file is gone by the time the assertions run.
+
+Impact: T24 step 0.5 and 0.7 (the environment bodies and the protection body).
+
+Proposed handling: both use
+`gh api --method PUT <endpoint> --input -` with the body on stdin. The guard test asserts the
+argument array and the byte-exact JSON for the staging environment, the production environment
+with resolved reviewer ids, and branch protection.
+
+Resolution: 2026-09-08 — T24 steps 0.5 and 0.7 updated; the "temporary file" wording removed.
+
+## 2026-09-08 T24 — `wrangler d1 create` does not report the new database id in a machine-readable form
+
+Expected (plan reference): `docs/plan/tasks/T24-bootstrap.md` step 0.2 — "`wrangler d1 create
+<APP_NAME>-<env> --jurisdiction eu` unless `wrangler d1 list --json` already lists it; write
+the `database_id` into `env.<env>.d1_databases[0].database_id`".
+
+Observed: `pnpm exec wrangler d1 create --help` on 4.129.0 offers `--location`,
+`--jurisdiction`, `--use-remote`, `--update-config` and `--binding`, and **no `--json`**. Its
+output is a human-readable block. `wrangler d1 list --json` is the only machine-readable source
+of a database's `uuid`, so the step's own "unless already listed" probe is also the way to
+learn the id of a database it just created.
+
+Impact: T24 step 0.2 only.
+
+Proposed handling: after a successful `d1 create`, `scripts/bootstrap.mjs` re-runs
+`wrangler d1 list --json` and reads the `uuid` of the entry whose `name` matches; it refuses
+with `created <name> but 'wrangler d1 list --json' does not report its id` rather than writing
+a guess. `--update-config` was not used: it would let Wrangler rewrite `wrangler.jsonc` in a
+shape we do not control, and the whole point of the in-place text edit is that the file's
+comments and per-environment structure survive.
+
+Resolution: 2026-09-08 — F10 gains the note that `d1 create` has no `--json`; T24 step 0.2
+records the second `d1 list` call.
+
+## 2026-09-08 T24 — `INSERT OR IGNORE` with a generated organization id is not idempotent
+
+Expected (plan reference): `docs/plan/tasks/T24-bootstrap.md` step 2 — `scripts/bootstrap-org.mjs`
+inserts the organization and its owner membership "with every NOT NULL column from F6 and
+`node_modules/@agent-native/core/dist/org/migrations.js` (epoch-millisecond timestamps,
+generated ids); … idempotent (`INSERT OR IGNORE`)".
+
+Observed: those two requirements contradict each other for `organizations`. Its only unique
+constraint is the primary key, so `INSERT OR IGNORE` with a freshly generated id never
+conflicts and a second run creates a *second* organization with the same name — after which
+the owner has two memberships and the framework's active-organization resolution picks one
+arbitrarily. `org_members` is fine either way: `UNIQUE(org_id, email)` makes its
+`INSERT OR IGNORE` genuinely idempotent once `org_id` is stable.
+
+Impact: T24 step 2.
+
+Proposed handling: the organization id is derived from its name — `org_` plus a lowercased,
+non-alphanumerics-to-underscore slug, capped at 40 characters — so the primary key is the
+idempotency key and a re-run inserts nothing. `--id` overrides it. This also matches the
+repository's own convention: the seed scenario's organizations are `org_acme` and `org_other`
+(B12), not nanoids. The member id stays generated, guarded by the unique index.
+
+Verified against a local D1 with the two framework tables created from the F6 DDL, in an
+isolated `--persist-to` directory:
+
+```
+$ wrangler d1 execute … --command "<the script's SQL>"     # first run
+$ wrangler d1 execute … --command "<the script's SQL>"     # second run
+$ wrangler d1 execute … --json --command "SELECT id, name, created_by FROM organizations; SELECT org_id, email, role FROM org_members"
+[{"results":[{"id":"org_acme_services","name":"Acme Services","created_by":"owner@example.invalid",…}],…},
+ {"results":[{"org_id":"org_acme_services","email":"owner@example.invalid","role":"owner"}],…}]
+```
+
+One organization row and one membership row after two runs. The same check proved that
+`wrangler d1 execute --command` accepts the two `;`-separated statements the script sends.
+
+Resolution: 2026-09-08 — T24 step 2 records the derived id and why; `--dry-run` added so the
+SQL can be inspected, and re-verified, without a remote call.
+
+## 2026-09-08 T24 — the framework's own `POST /_agent-native/org` also creates an organization
+
+Expected (plan reference): `docs/plan/tasks/T24-bootstrap.md` step 2 specifies SQL through
+`wrangler d1 execute --remote` as the way to create the first organization.
+
+Observed: the framework exposes `POST /_agent-native/org` (`dist/org/plugin.js:14`,
+`createOrgHandler` in `dist/org/handlers.js:203`), which calls `createOrganization(name, email)`
+— and that does two things the SQL does not: it generates the per-organization `a2a_secret`,
+and it writes the caller's `active-org-id` user setting (`dist/org/context.js:403-422`).
+
+Impact: none on the delivered behaviour, but the difference is worth writing down so nobody
+later "fixes" the script by adding those columns by hand.
+
+Proposed handling: kept the SQL script the task specifies, because the state a freshly deployed
+environment is actually in is "nobody has a browser session yet", and recorded in the script's
+own header comment why the two omitted columns are correct to omit: `a2a_secret` is the
+cross-app delegation secret and this starter configures no A2A surface (D24), and
+`active-org-id` is unnecessary with one membership — the framework resolves the active
+organization from the membership itself (F6). `docs/bootstrap.md` step 14 uses the script.
+
+Resolution: 2026-09-08 — Accepted; recorded in `scripts/bootstrap-org.mjs`'s header.
+
+## 2026-09-08 T23 — `agent-native typecheck` prints production configuration errors and exits 0
+
+Expected (plan reference): `docs/plan/03-blueprint.md` B15 — `typecheck` is
+`agent-native typecheck`, and `pnpm check` runs it — with the standing rule that `pnpm check`
+passes.
+
+Observed: on every run, in every tree, `pnpm typecheck` prints two blocks of
+`[agent-native] production configuration errors: - ERROR: BETTER_AUTH_SECRET is not set for
+production …` (once for phase `build`, once for phase `runtime`), each followed by a
+"Copy the prompt below to an AI coding agent" paragraph — and then **exits 0**. Confirmed
+pre-existing and unrelated to this task by stashing every change and running it on
+`origin/main` (`d03f3b1`), which prints the same thing.
+
+The framework is evaluating its production configuration statically and there is no
+`BETTER_AUTH_SECRET` in a developer's environment, which is correct: it is a Worker secret set
+per environment with `wrangler secret put` (B14) and is deliberately absent locally.
+
+Impact: none functional. It is 20 lines of alarming output in the middle of every `pnpm check`,
+including the acceptance transcript every pull request pastes, and it invites somebody to
+"fix" it by putting a production secret somewhere it must not be.
+
+Proposed handling: left alone, and recorded here so it is known to be expected. Setting
+`BETTER_AUTH_SECRET` in `.env` silences it locally and is harmless (`.env` is git-ignored and
+the value is not the production one), but it must never be added to `.env.example`, to
+`wrangler.jsonc` `vars` or to any committed file — `scripts/check-config-hygiene.mjs` fails the
+build if it is.
+
+Resolution: 2026-09-08 — Accepted; noted for T26's report so the noise is not mistaken for a
+finding.
+
+## 2026-09-08 T23 — a timing-sensitive guard assertion became flaky once a parallel test file was added
+
+Expected (plan reference): `docs/plan/tasks/T12-worker-smoke.md` and the entry
+*2026-09-07 T16 — Playwright's teardown hangs on inherited stdio* established
+`terminateProcessGroup` and its guard fixtures; `pnpm test:guards` is part of `pnpm check` and
+must pass.
+
+Observed: adding `tests/guards/bootstrap.test.mjs` — twelve cases, each spawning several stub
+subprocesses — made an existing assertion in `tests/guards/worker-smoke.test.mjs` fail
+intermittently. `node --test tests/guards/*.test.mjs` runs files in parallel, so the new file
+loads the machine while the old one measures a deadline:
+
+```
+✖ process-group teardown kills a child after its launcher exits
+  AssertionError: Missing expected exception.
+  expected: { code: 'ESRCH' }
+```
+
+The assertion was `assert.throws(() => process.kill(childPid, 0), { code: "ESRCH" })`
+immediately after `await terminateProcessGroup(launcher, 100)`. `terminateProcessGroup` waits
+for the process *group* to disappear; the child this test watches is reparented to init when
+its launcher exits, and is reaped a moment later. The test was asserting on kernel bookkeeping
+that had not finished, not on whether the child had been terminated. Ran clean in isolation
+three times out of three, which is exactly the signature of a load-dependent race.
+
+Impact: `pnpm check` and CI's `verify` job, intermittently, for reasons unrelated to whatever
+is being changed.
+
+Proposed handling: the assertion polls. `waitForNoSuchProcess(pid, 5_000)` waits for `ESRCH`
+at 25 ms intervals and `assert.fail`s with the pid and the timeout when the deadline passes, so
+a process that genuinely survives still fails the test — the property under test is unchanged,
+only the moment it is measured. Four consecutive `pnpm test:guards` runs pass.
+
+Resolution: 2026-09-08 — fixed in `tests/guards/worker-smoke.test.mjs`; the reason is recorded
+in a comment at the assertion so it is not "simplified" back.

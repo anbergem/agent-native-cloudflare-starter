@@ -12,6 +12,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { parseJsonc } from "./lib/jsonc.mjs";
+
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
@@ -51,7 +53,13 @@ const ALLOWED_EXAMPLE_VALUES = {
   SEED_PASSWORD: "Example-Seed-Password-2026",
 };
 
-const EXAMPLE_FILES = [".env.example", ".dev.vars.example"];
+// `.bootstrap.env.example` joins the list so the same "names only" rule covers the bootstrap
+// input, whose real form holds the Cloudflare token and the Google client secret (T24).
+const EXAMPLE_FILES = [
+  ".env.example",
+  ".dev.vars.example",
+  ".bootstrap.env.example",
+];
 
 // B15/T02: the deploy-time placeholder belongs only in the `staging` and `production` blocks
 // of wrangler.jsonc. Anywhere else it is either a placeholder someone forgot to fill in or a
@@ -63,6 +71,7 @@ const PLACEHOLDER_SCANNED_FILES = [
   "package.json",
   ".env.example",
   ".dev.vars.example",
+  ".bootstrap.env.example",
 ];
 
 /** @type {string[]} */
@@ -136,102 +145,13 @@ if (frameworkConfig !== null) {
   }
 }
 
-/** @param {string} source */
-function stripJsonComments(source) {
-  let result = "";
-  let inString = false;
-  let inLineComment = false;
-  let inBlockComment = false;
-  for (let index = 0; index < source.length; index += 1) {
-    const char = source[index];
-    const next = source[index + 1];
-    if (inLineComment) {
-      if (char === "\n") {
-        inLineComment = false;
-        result += char;
-      }
-      continue;
-    }
-    if (inBlockComment) {
-      if (char === "*" && next === "/") {
-        inBlockComment = false;
-        index += 1;
-      } else if (char === "\n") {
-        result += char;
-      }
-      continue;
-    }
-    if (inString) {
-      result += char;
-      if (char === "\\") {
-        result += next ?? "";
-        index += 1;
-      } else if (char === '"') {
-        inString = false;
-      }
-      continue;
-    }
-    if (char === '"') {
-      inString = true;
-      result += char;
-      continue;
-    }
-    if (char === "/" && next === "/") {
-      inLineComment = true;
-      index += 1;
-      continue;
-    }
-    if (char === "/" && next === "*") {
-      inBlockComment = true;
-      index += 1;
-      continue;
-    }
-    result += char;
-  }
-  return result;
-}
-
-/**
- * JSONC allows trailing commas and `oxfmt` (trailingComma: "all") writes them, so they have to
- * come out before `JSON.parse`. Commas are replaced by spaces, never deleted, so byte offsets
- * in a parse error still point at the right place in the original file.
- * @param {string} source
- */
-function stripTrailingCommas(source) {
-  const characters = [...source];
-  let inString = false;
-  for (let index = 0; index < characters.length; index += 1) {
-    const char = characters[index];
-    if (inString) {
-      if (char === "\\") index += 1;
-      else if (char === '"') inString = false;
-      continue;
-    }
-    if (char === '"') {
-      inString = true;
-      continue;
-    }
-    if (char !== ",") continue;
-    let ahead = index + 1;
-    while (ahead < characters.length && /\s/.test(characters[ahead] ?? "")) {
-      ahead += 1;
-    }
-    if (characters[ahead] === "}" || characters[ahead] === "]") {
-      characters[index] = " ";
-    }
-  }
-  return characters.join("");
-}
-
 // wrangler.jsonc does not exist until T02; skip the check until it does.
 const wranglerSource = read("wrangler.jsonc");
 if (wranglerSource !== null) {
   /** @type {Record<string, unknown> | null} */
   let wrangler = null;
   try {
-    wrangler = JSON.parse(
-      stripTrailingCommas(stripJsonComments(wranglerSource)),
-    );
+    wrangler = parseJsonc(wranglerSource);
   } catch (error) {
     findings.push(
       `wrangler.jsonc: not parseable as JSON after stripping comments (${error})`,
@@ -326,7 +246,7 @@ for (const file of placeholderFiles) {
 
 // The real files must stay out of git. `git check-ignore -q` rejects more than one pathname
 // ("fatal: --quiet is only valid with a single pathname"), so ask about one file at a time.
-for (const file of [".env", ".dev.vars"]) {
+for (const file of [".env", ".dev.vars", ".bootstrap.env"]) {
   try {
     execFileSync("git", ["check-ignore", "-q", file], { cwd: repoRoot });
   } catch {
