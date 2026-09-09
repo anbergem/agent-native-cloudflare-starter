@@ -1870,3 +1870,53 @@ Resolution: 2026-09-08 — `FINAL-REPORT.md` §4.7, follow-up 15, risk 1 and the
 table updated with the run and the five recorded behaviours. Re-run after any change to
 `agent/AGENTS.md`, the action descriptions or the framework pin: a model update can change the
 result with no change to this repository, so a stale eval result is no result.
+
+## 2026-09-09 Quick start — `pnpm dev` served a blank page on a cold dependency cache
+
+Expected (plan reference): `README.md`'s quick start ends with `pnpm dev` and
+`http://localhost:8080`. B18 and the template's whole premise require that first load to work.
+
+Observed: on a cold or invalidated Vite dependency cache the first page load is **blank** — empty
+`<body>`, and eight `504 (Outdated Optimize Dep)` in the console. A manual reload fixes it, so it
+survived every previous verification: T26's fresh-clone run recorded `pnpm dev` as HTTP 200, which
+it is, and the browser suite reloads as a matter of course. It was reported by the maintainer
+using the documented steps.
+
+Cause, from the dev server log:
+
+```
+[vite] (client) Re-optimizing dependencies because vite config has changed
+[optimizer] bundling dependencies...
+✨ new dependencies optimized: @agent-native/core/client/agent-chat, … @agent-native/toolkit/utils   (40 entries)
+✨ optimized dependencies changed. reloading
+[agent-native] Vite optimized deps changed while loading /node_modules/.vite/deps/@agent-native_core_client_i18n.js; reloading the page.
+```
+
+React Router has no `index.html`, so Vite's dependency scanner never reaches `app/root.tsx` — and
+root.tsx is where those forty framework client subpaths are statically imported. They were
+therefore discovered only when the browser requested the client entry, mid-load: the optimizer
+re-bundled, every in-flight request answered 504, and the framework's own recovery reload landed on
+a page whose module graph had already failed. `optimizeDeps.holdUntilCrawlEnd` is on by default and
+cannot help, because the crawl it waits for never saw the imports.
+
+`optimizeDeps.ignoreOutdatedRequests` would have silenced the 504s and was rejected: it is
+documented to give "a single module multiple reference", which is the exact class of breakage the
+`resolve.dedupe` and `@assistant-ui/*` aliases in `vite.config.ts` exist to prevent.
+
+Proposed handling: `server.warmup.clientFiles` for `app/entry.client.tsx`, `app/root.tsx` and
+`app/routes/*.tsx`, so discovery runs at server start, before a browser request exists to
+invalidate. Dev-only; the build is untouched.
+
+Resolution: 2026-09-09 — applied and verified against a cleared `node_modules/.vite/deps`: zero
+`optimized dependencies changed. reloading` lines in the server log, and a first load in a fresh
+browser tab that renders the sign-in page with no 504 at all (only the expected unauthenticated
+401s). `pnpm build:worker` still produces 3.87 MiB gzip with both patches matched.
+
+Separately, and reported in the same message: `pnpm dev:worker` presented a sign-in page that
+rejected every password. The cause was an unseeded database, not a wrong one — the Worker's local
+D1 held 0 users while the Node database held 5, because `pnpm db:seed` seeds only the Node runtime
+and `pnpm db:seed:worker` only the Worker's D1. All three `SEED_PASSWORD` values (`.env`,
+`.dev.vars`, the scenario default) were verified identical, so the password was never involved. The
+README documented both commands but never said they address different databases; it now states
+that, and gives the one-line `wrangler d1 execute … SELECT count(*) FROM user` that distinguishes
+"unseeded" from "wrong password" in a case where the UI cannot.

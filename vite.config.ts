@@ -14,6 +14,28 @@ const coreRequire = createRequire(
 );
 
 export default defineConfig({
+  // Cold start used to serve a blank page.
+  //
+  // React Router has no `index.html`, so Vite's dependency scanner never
+  // reaches `app/root.tsx` — and root.tsx is where the framework's 40-odd
+  // `@agent-native/core/client/*` and `@agent-native/toolkit/*` subpaths are
+  // imported. They were therefore discovered only when the browser requested
+  // the client entry, mid-load: the optimizer re-bundled, every in-flight
+  // request 504'd with "Outdated Optimize Dep", and the page came up empty
+  // until a manual reload. `holdUntilCrawlEnd` (on by default) cannot help,
+  // because the crawl it waits for never saw those imports.
+  //
+  // Warming the entry and the routes runs that discovery at server start
+  // instead, before any browser request exists to invalidate.
+  server: {
+    warmup: {
+      clientFiles: [
+        "./app/entry.client.tsx",
+        "./app/root.tsx",
+        "./app/routes/*.tsx",
+      ],
+    },
+  },
   resolve: {
     // Core and toolkit both use assistant-ui contexts. Keep published and
     // linked graphs on one store so the agent sidebar can compose reliably.
