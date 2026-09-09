@@ -56,7 +56,7 @@ pnpm dev                              # http://localhost:8080 — leave it runni
 In a second terminal:
 
 ```bash
-pnpm db:seed                          # deterministic sample data and five users
+pnpm db:seed                          # deterministic sample data and five users — Node runtime only
 ```
 
 Sign in as `owner@example.invalid` with the `SEED_PASSWORD` from `.env`
@@ -70,8 +70,25 @@ To run the real Cloudflare Worker instead of the Node dev server:
 
 ```bash
 pnpm dev:worker                       # builds dist/ and serves it on http://127.0.0.1:8787
-pnpm db:seed:worker
+pnpm db:seed:worker                   # a different database — see below
 ```
+
+**The two runtimes have separate databases, and separate seeds.** `pnpm dev` serves the Node
+dev server on `data/app.db` and is seeded by `pnpm db:seed`; `pnpm dev:worker` serves the built
+Worker on the local D1 under `.wrangler/` and is seeded by `pnpm db:seed:worker`. Seeding one
+does nothing for the other, and the order matters in both cases: the server has to boot first,
+because the framework creates its own tables on the first request that touches the database.
+
+So if `pnpm dev:worker` gives you a sign-in page that rejects every password, the likely cause
+is an unseeded database rather than a wrong one — no account exists to sign in to. Check with:
+
+```bash
+pnpm exec wrangler d1 execute example-jobs-local --local --command "SELECT count(*) FROM user"
+```
+
+Zero means run `pnpm db:seed:worker` while `pnpm dev:worker` is up. The seed password is the
+same in both runtimes: `SEED_PASSWORD` from `.env` for the Node server and from `.dev.vars` for
+the Worker, both defaulting to the `Example-Seed-Password-2026` the examples name.
 
 ## Architecture
 
