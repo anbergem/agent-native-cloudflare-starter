@@ -16,11 +16,10 @@
 // `wrangler.jsonc` for real and be inspected afterwards without touching the working tree.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
   cpSync,
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -856,5 +855,16 @@ test("the committed example file carries names only", () => {
       `.bootstrap.env.example must carry no value: ${line}`,
     );
   }
-  assert.equal(existsSync(path.join(repoRoot, ".bootstrap.env")), false);
+  // Not "the file does not exist": a maintainer who is actually bootstrapping
+  // has one, and asserting its absence failed `pnpm check` for the first person
+  // to use the script as documented (DISCREPANCIES.md, 2026-09-11). What has to
+  // hold is that it can never be committed, which is what the ignore rule does.
+  // `git check-ignore -q` exits 0 when the path is ignored.
+  assert.doesNotThrow(
+    () =>
+      execFileSync("git", ["check-ignore", "-q", ".bootstrap.env"], {
+        cwd: repoRoot,
+      }),
+    ".bootstrap.env must be git-ignored",
+  );
 });
