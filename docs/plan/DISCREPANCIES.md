@@ -1920,3 +1920,91 @@ and `pnpm db:seed:worker` only the Worker's D1. All three `SEED_PASSWORD` values
 README documented both commands but never said they address different databases; it now states
 that, and gives the one-line `wrangler d1 execute … SELECT count(*) FROM user` that distinguishes
 "unseeded" from "wrong password" in a case where the UI cannot.
+
+## 2026-09-11 `pnpm dev:worker` — the agent never answers; a local D1 query hangs forever
+
+Expected (plan reference): B18 and D02 make `pnpm dev:worker` the local rehearsal of the deployed
+runtime, and the agent is the reason the framework was chosen at all.
+
+Observed, reported by the maintainer and reproduced here: under `wrangler dev` the agent chat never
+responds. `POST /_agent-native/agent-chat` sends **no response headers at all** — not an error, not
+a stream, nothing. A client waits until it gives up (60s, and once 5 minutes). The same request
+works on the Node dev server.
+
+Everything that could plausibly be misconfigured was eliminated, in this order, from inside the
+Worker via a temporary probe route:
+
+| Stage | Result |
+| --- | --- |
+| Route reachable, unauthenticated | **401 in 56ms** |
+| Route reachable, authenticated, invalid body | **400 in 13ms** (`message is required`) |
+| Outbound HTTPS to `api.anthropic.com` (bogus key) | **401 in 193ms** — egress works |
+| `resolveCredential("ANTHROPIC_API_KEY")` from the DB | **found, 108 chars, 3ms** — storage and decryption work |
+| A one-token `claude-haiku-4-5` call with that key | **HTTP 200 in 804ms** — the provider works from workerd |
+| `POST /_agent-native/agent-chat` with a valid message | **no headers, ever** |
+
+Wrangler's local observability API (`/cdn-cgi/local/explorer/api/local/observability/query`, which
+serves SQL over a `spans` table) then located it exactly. The trace of one hung request:
+
+```
++0ms  POST    outcome=None          <- never completes
++1ms  d1_all  ok  2ms
++3ms  d1_all  ok  1ms      +3ms  d1_all ok 0ms
++4ms  d1_all  ok  0ms      +4ms  d1_all ok 0ms
++6ms  d1_all  ok  1ms      +6ms  d1_all ok 0ms
++7ms  d1_all  outcome=None          <- the eighth query never returns
++7ms  fetch   outcome=None          <- its miniflare D1 call never returns
+```
+
+Seven D1 queries complete in 0–2ms each; the eighth hangs forever, and the request dies with it
+seven milliseconds in — before the model, the credential or the network is ever involved. Across a
+session, in-flight spans accumulate (34 requests and 12 `d1_all` stuck) while 7,506 other `d1_all`
+queries in the same process completed normally, so it is specific to this code path rather than to
+D1 use in general.
+
+Naming the statement was not achieved. `getDbExec()`'s singleton was patched in place to log every
+statement and logged **nothing** for this request: the framework's own tables are reached through a
+path that does not go through that executor, and `d1_all` is workerd's instrumentation of the D1
+binding rather than anything in `@agent-native/core`. Naming it would mean patching the D1 binding
+inside the 13 MB built bundle.
+
+Impact: the agent — the whole point of the framework — does not work under the local Worker.
+`verify:worker`'s "agent chat SSE" check never caught it because it asserts the stream opens with
+`errorCode: "missing_credentials"`, which is true only because its isolated D1 has no credential:
+the code path that runs *when a credential exists* has never executed under `wrangler dev` in this
+repository's history. That assertion should be read as "the endpoint refuses cleanly without a
+key", not "the agent works".
+
+**Open and important: whether a deployed Worker is affected is unknown.** Cloudflare's real D1 is
+not miniflare's local simulation, and the deployed runtime differs from `wrangler dev` in exactly
+this area. Nothing here says production is broken, and nothing here says it works. Finding out
+requires the staging environment from §6, which raises its priority above every other outstanding
+item.
+
+Proposed handling: report upstream with the trace
+(`docs/plan/upstream-issues/agent-chat-d1-hang.md`), and treat the deployed check as the first
+thing staging is used for. No workaround in this repository is known; `pnpm dev` is unaffected and
+remains the way to exercise the agent locally.
+
+Resolution: open. Temporary probe route and SQL tracer were removed after use; the Haiku model
+default set on the Worker's local D1 during the investigation (`claude-haiku-4-5-20251001`,
+org-scoped) was left in place deliberately, to keep local experiments cheap.
+
+## 2026-09-11 T24 — `pnpm check` fails for anyone who actually uses the bootstrap script
+
+Expected (plan reference): T24 requires `.bootstrap.env` to be git-ignored and only the
+names-only example committed, and `tests/guards/bootstrap.test.mjs` guards that.
+
+Observed: the guard asserted `existsSync(".bootstrap.env") === false`. The maintainer created the
+file to run the bootstrap — exactly what `docs/bootstrap.md` instructs — and `pnpm check` began
+failing with `true !== false`. The guard punished the documented workflow.
+
+Impact: the whole point of the file is that it exists locally while you bootstrap. Left alone, the
+first person to follow the setup guide finds their verification broken and no obvious reason why.
+
+Proposed handling: assert what actually matters — that the path is git-ignored, via
+`git check-ignore -q`, the same mechanism `scripts/check-config-hygiene.mjs` already uses for
+`.env`, `.dev.vars` and `.bootstrap.env`. Absence was never the requirement; uncommittability is.
+
+Resolution: 2026-09-11 — changed; the guard passes with the file present and would still fail if
+the ignore rule were removed.
