@@ -71,7 +71,9 @@ const REQUIRED_KEYS = [
   "SEED_PASSWORD",
 ];
 
+const D1_LOCATIONS = ["weur", "eeur", "apac", "oc", "wnam", "enam"];
 const OPTIONAL_KEYS = [
+  "STAGING_D1_LOCATION",
   "PRODUCTION_REVIEWERS",
   "TEMPLATE_REPOSITORY",
   "BACKUP_AGE_RECIPIENT",
@@ -226,6 +228,14 @@ function validateInputs(inputs) {
     !/^[01]$/.test(inputs.TEMPLATE_REPOSITORY)
   ) {
     problems.push("TEMPLATE_REPOSITORY must be 0 or 1 when set");
+  }
+  if (
+    inputs.STAGING_D1_LOCATION &&
+    !D1_LOCATIONS.includes(inputs.STAGING_D1_LOCATION.trim())
+  ) {
+    problems.push(
+      `STAGING_D1_LOCATION must be one of ${D1_LOCATIONS.join(", ")} when set`,
+    );
   }
   const s3 = [
     "BACKUP_S3_BUCKET",
@@ -652,6 +662,34 @@ function stepD1(ctx) {
   for (const environment of ENVIRONMENTS) {
     const name = `${inputs.APP_NAME}-${environment}`;
     let existing = databases.find((database) => database?.name === name);
+    // Jurisdiction is a data-residency control, and it costs latency to anything
+    // outside that region. Production holds real people's data and is pinned to
+    // the EU. Staging holds only the synthetic scenario — `Example Customer A`,
+    // addresses at `example.invalid` — so there is nothing to keep resident, and
+    // pinning it made every CI request cross the Atlantic: a US GitHub runner
+    // reaches a US Cloudflare colo, which then talks to a database
+    // `running_in_region EEUR`. Measured, the same `create-job` took 468ms from
+    // a European machine and between 2s and over 60s from a runner, reads
+    // included, which no smoke timeout can paper over
+    // (DISCREPANCIES.md, 2026-09-15).
+    // Without a hint D1 places the database near whoever runs the command, so a
+    // maintainer in Europe gets `running_in_region EEUR` even unpinned — and a
+    // jurisdiction makes it worse, because the help is explicit that "if
+    // jurisdictions are set, the location hint is ignored". Staging is
+    // therefore unpinned *and* hintable, so it can sit near the CI that smokes
+    // it; `STAGING_D1_LOCATION` is empty by default, which keeps D1's own
+    // choice.
+    const hint = inputs.STAGING_D1_LOCATION?.trim();
+    const createArgs =
+      environment === "production"
+        ? ["d1", "create", name, "--jurisdiction", "eu"]
+        : ["d1", "create", name, ...(hint ? ["--location", hint] : [])];
+    const residency =
+      environment === "production"
+        ? "EU jurisdiction"
+        : hint
+          ? `location hint ${hint} (synthetic data only, no jurisdiction pin)`
+          : "no jurisdiction pin and no location hint (D1 chooses, near you)";
     if (existing) {
       record(
         "d1",
@@ -660,16 +698,12 @@ function stepD1(ctx) {
         `id ${existing.uuid}`,
       );
     } else if (!ctx.apply) {
-      record("d1", `database ${name}`, "would create", "EU jurisdiction");
-      showCommand("wrangler", ["d1", "create", name, "--jurisdiction", "eu"]);
+      record("d1", `database ${name}`, "would create", residency);
+      showCommand("wrangler", createArgs);
     } else {
-      const created = run(
-        "wrangler",
-        ["d1", "create", name, "--jurisdiction", "eu"],
-        {
-          env: cloudflareEnv(inputs),
-        },
-      );
+      const created = run("wrangler", createArgs, {
+        env: cloudflareEnv(inputs),
+      });
       if (created.status !== 0) {
         refuse(
           `\`wrangler d1 create ${name}\` failed: ${created.stderr.trim()}`,

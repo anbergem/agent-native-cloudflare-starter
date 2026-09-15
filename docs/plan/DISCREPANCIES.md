@@ -2227,3 +2227,314 @@ over the public internet.
 Resolution: 2026-09-15 — applied; `pnpm check` and `pnpm verify:worker` (12/12) pass. Whether 45s
 is enough is not proven: the next staging run is the test, and if `create-job` still exceeds it
 the problem is not cold-start latency and the hunt resumes with better numbers than before.
+
+## 2026-09-15 B20 — `create-job` hangs only in the smoke, and the agent errors on staging
+
+Expected (plan reference): with a 45s per-request ceiling (previous entry) a cold deployment has
+room to answer, and the staging smoke should pass.
+
+Observed, on the first run with that ceiling:
+
+```
+[ok]   authenticated list-jobs
+[fail] reversible write…: POST /_agent-native/actions/create-job failed after 45000ms at most
+[fail] agent chat SSE: stream began with error:
+       {"type":"error","error":"Cannot read properties of undefined (reading 'stream')","seq":4}
+[ok]   unauthenticated MCP challenge
+```
+
+Two separate findings, and the first refutes the cold-start explanation the ceiling was based on.
+
+**1. `create-job` does not finish in 45s — but only inside the smoke.** The same call, against the
+same deployment, succeeded from a GitHub runner in 2203ms and 1518ms in the throwaway diagnostic
+job, and in 468ms from a developer machine. Three environments where it works, one where it does
+not. The distinguishing feature is what runs immediately before it: the smoke starts **zero
+seconds** after `Reset QA scenario` finishes (18:15:44 → 18:15:44), and that step is
+`seed.mjs --target d1-remote --reset`, a bulk delete-and-reinsert against the same remote D1. The
+diagnostic job ran standalone with no preceding reset. That makes "the first write after a bulk
+remote reset does not complete" the hypothesis the evidence actually supports — untested, and to be
+tested rather than believed, given how many hypotheses this thread has already buried.
+
+**2. The deployed agent chat fails with a TypeError**, not a timeout: `Cannot read properties of
+undefined (reading 'stream')` at `seq 4`. With a longer ceiling the stream opens and then errors,
+which is new: previously it only ever timed out. This is a real defect on a deployed Worker and may
+share a root with the agent-chat hang recorded under local `wrangler dev` (2026-09-11), where the
+request died on a D1 query that never returned. It is not explained by anything in this repository's
+code so far.
+
+Impact: staging still does not go green, but neither failure indicts the application as exercised by
+hand — every action works from a developer machine and from a runner outside the smoke.
+
+Proposed handling: (1) test the reset hypothesis by adding the same remote reset to the throwaway
+diagnostic immediately before `create-job`; if it reproduces, the smoke needs to wait for D1 to
+settle, or the reset needs to be gentler. (2) Capture the agent-chat TypeError as its own upstream
+report — it is a framework stack, not ours.
+
+Resolution: open. Recorded so the next person starts from the evidence rather than from the three
+wrong hypotheses that preceded it.
+
+## 2026-09-15 D18 — staging's EU jurisdiction is why CI could never smoke it
+
+Expected (plan reference): D18 and T24 create both D1 databases with `--jurisdiction eu`, and B20's
+staging smoke exercises the deployed Worker after every deploy.
+
+Observed: the smoke's `create-job` failed at a 15s ceiling, then at 45s. A throwaway diagnostic then
+measured the same request from a GitHub runner across several dispatches: 2037ms, 1677ms, 2203ms,
+1518ms, 6134ms — and NO RESPONSE at 20s and at 60s, with a plain `list-customers` read also timing
+out at 20s on one pass. From a European developer machine the same call is 468ms every time. The
+hypothesis that the QA reset caused it did not survive: a baseline probe with no reset at all
+timed out too, and a post-reset probe succeeded.
+
+Cause, from `wrangler d1 info`:
+
+```
+name               acme-ops-staging
+running_in_region  EEUR
+jurisdiction       eu
+```
+
+and from the runner, `Azure Region: centralus`, serving colos SJC, ATL and IAD. Every CI request is
+a US runner reaching a US Cloudflare colo that then queries a database in Eastern Europe.
+`create-job` makes several sequential D1 round trips — the idempotency lookup, then the atomic
+batch — so it pays that crossing several times, with the variance a shared transatlantic path has.
+No smoke timeout fixes this: it is the deployment's shape, not a bug, and the numbers above cross
+an order of magnitude.
+
+Impact: the staging smoke could never be reliable, and three rounds of timeout-raising treated the
+symptom. Production is unaffected — EU users reach EU colos reaching an EU database, which is the
+arrangement the jurisdiction exists for.
+
+Proposed handling: keep the pin where it means something and drop it where it does not.
+Jurisdiction is a data-residency control; production holds real people's data and stays `eu`, while
+staging holds only the synthetic scenario (`Example Customer A`, `example.invalid`), so there is
+nothing to keep resident. `bootstrap.mjs` now creates production with `--jurisdiction eu` and
+staging without, `tests/guards/bootstrap.test.mjs` asserts exactly that asymmetry, and
+`docs/bootstrap.md` explains the reasoning and how to pin both if your CI runs in the EU.
+
+Correction, same day, from actually running it: creating a database *without* `--jurisdiction`
+still produced `Successfully created DB 'acme-ops-staging-2' in region EEUR`. D1 places a new
+database near whoever runs the command, so dropping the pin does not move it — a European
+maintainer gets EEUR either way. `wrangler d1 create --help` supplies the missing half: there is a
+`--location` hint (`weur`, `eeur`, `apac`, `oc`, `wnam`, `enam`), and "if jurisdictions are set,
+the location hint is ignored". So removing the jurisdiction is what *permits* a hint; the hint is
+what actually moves the database. The first version of this fix would have changed nothing
+measurable.
+
+Resolution: 2026-09-15 — `bootstrap.mjs` creates production with `--jurisdiction eu`, and staging
+unpinned plus an optional `--location` from `STAGING_D1_LOCATION`, validated against D1's six
+choices and empty by default (D1 chooses, near you). `.bootstrap.env.example` explains that
+GitHub-hosted runners are in the United States, so a European maintainer usually wants `enam`.
+An existing database cannot be moved — neither jurisdiction nor location is changeable after
+creation — so an existing deployment has to create a new one and repoint `wrangler.jsonc`.
+
+## 2026-09-15 B12 — the seed derived the database name and silently seeded the wrong one
+
+Expected (plan reference): B12's QA reset seeds the deterministic scenario into the environment the
+deployed Worker reads.
+
+Observed: with staging repointed at a new database, the deploy's reset reported
+
+```
+seed: reset: removed the scenario rows from acme-ops-staging
+seed: applied the scenario to acme-ops-staging
+```
+
+while `wrangler.jsonc`'s `env.staging.d1_databases[0]` had become `acme-ops-staging-2`. The seed
+wrote the scenario into a database the Worker no longer reads, and reported success. The smoke then
+failed on `QA login and organization` with `"orgId": null, "orgs": []`, and every action after it
+with `No active organization` — an authorization failure that looks nothing like the misdirected
+write behind it.
+
+Cause: `scripts/seed.mjs` computed the target as `` `${BASE_NAME}-${wranglerEnv}` ``, duplicating a
+fact that already lives in `wrangler.jsonc`. The two agreed until the day a database had to be
+recreated — and the recreation is exactly the situation the copy cannot survive, because neither
+jurisdiction nor location can be changed in place.
+
+Impact: a deploy that migrated, deployed and reset successfully, then failed the smoke for a reason
+unrelated to everything it reported doing. The wasted signal is the point: the run said "applied the
+scenario" and it had, to the wrong database.
+
+Proposed handling: read `env.<env>.d1_databases[0].database_name` from `wrangler.jsonc` for
+`--target d1-remote`, and refuse rather than guess when it is absent. The local targets keep their
+derived names: nothing else defines them, and there is no second source to drift from.
+
+Resolution: 2026-09-15 — applied; `pnpm check` passes. The template's own `package.json` still
+spells the staging database name in `db:migrate:staging`, which is a second copy of the same fact —
+left alone here because `wrangler d1 migrations apply` takes the name as an argument, but worth
+revisiting if it drifts too.
+
+## 2026-09-15 D06 — the deploy seeds before the framework has created its tables
+
+Expected (plan reference): D06 and F8 give the schema two owners — the app's migrations, applied by
+`wrangler d1 migrations apply`, and the framework's own tables (`organizations`, `org_members`, the
+audit log), which it creates at runtime on the first request that touches the database. T11 already
+recorded that the seed must run after the app has touched the database.
+
+Observed: on a genuinely new staging database the deploy failed in `Reset QA scenario`:
+
+```
+🌀 Executing on remote database acme-ops-staging (ccbfda85-…)
+✘ [ERROR] no such table: org_members: SQLITE_ERROR
+```
+
+The workflow's order is migrate → deploy → reset → smoke. Migration creates the app's tables only;
+deployment serves no request; so the reset is the first thing to touch the database, and the
+framework's tables do not exist yet.
+
+Impact: the deploy pipeline could never bootstrap a fresh environment — the exact path a new
+installation of this template takes. It went unnoticed because every previous staging deploy ran
+against a database that earlier smoke attempts had already woken, which is a property of this
+repository's history rather than of the pipeline.
+
+Proposed handling: a step between deploy and reset that polls `/_agent-native/health` until it
+reports `"db":true`, bounded to 30 attempts. That is the framework's own readiness endpoint, it is
+public, and reaching it is what makes the framework create its tables. Failure says why the seed
+would have failed rather than leaving `no such table` as the first sign.
+
+Resolution: 2026-09-15 — applied to `deploy-staging.yml`; `pnpm lint:workflows` is clean. Production
+does not need it: its first deploy is a promotion of an artifact that staging has already exercised,
+and `bootstrap-org.mjs` is a manual step the operator runs after signing in, which is itself a
+request that touches the database.
+
+## 2026-09-15 B20 — a deployed POST sometimes returns nothing, while the Worker says it succeeded
+
+Expected (plan reference): B20's staging smoke fails when the deployment is wrong.
+
+Observed, after the database was moved to ENAM and the seeding order fixed, across three diagnostic
+phases on the same run:
+
+| Phase | first `create-job` | second `create-job` |
+| --- | --- | --- |
+| 1 | no response (20s) | 200 in 3778ms |
+| 2 | no response (20s) | no response (60s) |
+| 3 | no response (20s) | 200 in 2612ms |
+
+Reads in the same sessions answered in 128-390ms throughout. Geography is not the explanation: the
+database now sits in ENAM, the same continent as the runner, and the pattern is unchanged from
+EEUR. Nor is it the QA reset: a baseline phase with no reset behaves identically.
+
+A run with `wrangler tail` attached caught the Worker's own view of a first write that did answer:
+
+```
+{"u":"/_agent-native/actions/create-job","o":"ok","ex":[],
+ "lg":["{\"action\":\"create-job\",\"outcome\":\"success\",\"caller\":\"http\",\"durationMs\":214}"]}
+```
+
+**214ms server-side, no exception, outcome ok.** When the same call produces no response there is no
+trace event at all and nothing logged. So the application is not slow and does not fail; something
+between the runner and the edge loses the request or its response, intermittently, for POSTs.
+
+Impact: the smoke reported a defect that does not exist, repeatedly, and three fixes — a larger run
+budget, a per-request ceiling, a nearer database — each moved the symptom without touching it.
+
+Proposed handling: one retry, only when a request produced no response at all, and never when the
+run budget is already gone. That is safe here by design rather than by luck: creates carry an
+idempotency key and replay to the same resource, and every other command is guarded on
+`expectedVersion`, so a duplicate delivery is refused rather than applied twice (B11). The retry is
+logged as `[retry] <action>` so a run that needed one says so.
+
+Resolution: 2026-09-15 — applied; `pnpm check` and `pnpm verify:worker` (12/12) pass. The transport
+behaviour itself is **not explained**, and the retry does not explain it. What is established is
+where it is not: not the application, not the database's region, not the seeding order. If it turns
+out to matter for real users — a browser POST losing its response would be visible as a hung save —
+this deserves a proper investigation with Cloudflare rather than a tolerant test client.
+
+## 2026-09-15 B11 — the retry proved the writes arrive, and disproved the argument for retrying
+
+Expected (previous entry): retrying a lost POST is safe because creates carry an idempotency key
+and every other command is guarded on `expectedVersion`, so a duplicate is refused rather than
+applied twice.
+
+Observed, on the first staging run with that retry:
+
+```
+[retry] undo-operation: no response (POST …/undo-operation failed after 45000ms at most)
+[fail]  reversible write…: HTTP 409: {"error":"Already undone","errorCode":"CONFLICT"}
+```
+
+The claim was half right, and the half that was wrong is the important one. B11's guard did exactly
+its job: the first `undo-operation` **reached the Worker and applied**, and the duplicate was
+refused. The data was never at risk. But the smoke asserts the retry's status, so a guard working
+correctly reads as a failure — the retry converted a lost response into a false negative rather
+than recovering from it.
+
+It also settles what the transport problem is. The request arrives and is processed; only the
+reply is lost. That is now observed twice: once through `wrangler tail` (`create-job … outcome ok,
+durationMs 214` with no reply reaching the client) and once here, where the state change survives
+into a subsequent request.
+
+Proposed handling: after a lost response, assert on the **record**, not on the reply that happened
+to survive. The undo step now catches a `409` following a retry, logs `[recovered] undo-operation`,
+re-reads the job through `get-job` and asserts the status there.
+
+Resolution: 2026-09-15 — applied; `pnpm check` and `pnpm verify:worker` (12/12) pass. The same
+exposure exists in principle for `complete-job`, which is also version-guarded: a lost response
+followed by a retry would answer `409` and fail the same way. It is left alone deliberately —
+unobserved, and guessing at a second recovery path without a failure to read would be inventing
+requirements. If it appears, the pattern above is the one to copy.
+
+## 2026-09-15 B11 — the same exposure, on the next run, for `complete-job`
+
+Expected (previous entry): `complete-job` shares `undo-operation`'s exposure to a lost response in
+principle, and was left alone as unobserved.
+
+Observed, on the very next staging run:
+
+```
+[retry] create-job: no response (…failed after 45000ms at most)
+[retry] complete-job: no response (…failed after 45000ms at most)
+[fail]  reversible write…: HTTP 409: {"error":"The job was changed by someone else","errorCode":"CONFLICT"}
+```
+
+Two lost replies in a single run. `create-job` recovered by itself — its idempotency key made the
+replay return the same resource, which is B11 working exactly as intended. `complete-job` did not:
+the first attempt had applied and moved the version, so the retry met the version guard.
+
+Impact on the judgement, not just the code: "unobserved, so leave it" was the wrong call at a rate
+of roughly one lost reply per run. The evidence for the second case was one run away, and the cost
+of waiting was another full deploy cycle.
+
+Proposed handling: one helper, `guardedCommand`, replacing the undo-only recovery. On a `409` after
+a retry it re-reads the job through `get-job` **and** recovers the operation id from
+`list-recent-activity`, because the caller needs that id to undo what it just did — a detail the
+undo-only version did not have to solve.
+
+Resolution: 2026-09-15 — applied to `complete-job` and `undo-operation`; `pnpm check` and
+`pnpm verify:worker` (12/12) pass. `create-job` needs nothing: idempotent replay is its recovery.
+
+## 2026-09-15 B20 — connection reuse was not it either; stopping the local hunt
+
+Expected (previous entry): sending `connection: close` on writes would remove the window in which a
+pooled connection is closed after the Worker has handled a request.
+
+Observed: no change. `create-job` still lost both its attempts on the next staging run. The theory
+is dead, and the change is reverted rather than left in on the strength of it — a handshake per
+write is a real cost and it bought nothing.
+
+Five explanations have now been tested against evidence and refuted: cold start (a 45s ceiling
+failed identically), geography (moving the database from EEUR to ENAM changed nothing), the QA
+reset (a baseline phase with no reset behaves the same), D1's `atomicBatch` (the same call
+succeeds from a runner standalone), and connection reuse (this entry).
+
+What is established, and is not in doubt:
+
+- **The application is correct.** `wrangler tail` shows `create-job … outcome ok, durationMs 214`.
+  Every action works from a developer machine in under 500ms, and works from a GitHub runner in the
+  standalone diagnostic.
+- **Writes land even when replies do not.** A lost `undo-operation` was proven applied by the
+  guard that refused its retry.
+- **It is specific to POSTs against the action endpoints.** GETs through the same endpoints have
+  not failed once across hundreds of calls, and `POST /_agent-native/auth/login` has never failed
+  either — so "POST" alone does not describe it.
+- **`agent chat SSE` fails independently**, either with the same lost reply or with
+  `Cannot read properties of undefined (reading 'stream')`, which is a framework stack.
+
+What remains in the smoke is justified on its own terms regardless of cause: one retry for a lost
+reply, and `guardedCommand` asserting on the record rather than on whichever reply survived. Both
+are correct behaviour for a client that cannot assume a response arrives, and they are what made
+the mechanism visible in the first place.
+
+Resolution: the local hunt stops here. Continuing to iterate against a deployed environment, a
+cycle at a time, has passed the point where it produces knowledge. The next move is an upstream
+report carrying this evidence — the tail output, the timings, the five refutations — and a decision
+about whether a staging smoke should gate deploys while it runs across a path that loses replies.
